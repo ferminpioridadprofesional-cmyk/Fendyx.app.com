@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>FENDYX - Acceso</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/auth.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="auth-bg">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img id="authLogo" alt="Logo" style="display:none;max-width:90px;border-radius:14px;">
+      <span id="authLogoFallback" class="logo-hex">⬡</span>
+      <h1 id="authAppName">FENDYX</h1>
+      <p class="auth-tagline">Tu super-app del futuro</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="tab active" id="tabLogin" onclick="switchAuthTab('login')">Iniciar Sesión</button>
+      <button class="tab" id="tabRegister" onclick="switchAuthTab('register')">Crear Cuenta</button>
+    </div>
+    <form id="form-login" class="auth-form active" onsubmit="handleLogin(event)">
+      <div class="input-group"><input type="email" id="loginEmail" placeholder="Correo electrónico" autocomplete="email" required></div>
+      <div class="input-group password-group">
+        <input type="password" id="loginPassword" placeholder="Contraseña" autocomplete="current-password" required>
+        <button type="button" class="toggle-pass" onclick="togglePassword('loginPassword',this)">👁</button>
+      </div>
+      <button type="submit" class="btn-primary" id="btnLogin">Entrar</button>
+      <p class="auth-link" onclick="resetPassword()">¿Olvidaste tu contraseña?</p>
+    </form>
+    <form id="form-register" class="auth-form" onsubmit="handleRegister(event)">
+      <div class="input-group"><input type="text" id="regName" placeholder="Nombre completo" autocomplete="name" required></div>
+      <div class="input-group"><input type="email" id="regEmail" placeholder="Correo electrónico" autocomplete="email" required></div>
+      <div class="input-group"><input type="number" id="regAge" placeholder="Edad (mínimo 18)" min="18" max="100" required></div>
+      <div class="input-group password-group">
+        <input type="password" id="regPassword" placeholder="Contraseña (mín. 6)" minlength="6" autocomplete="new-password" required>
+        <button type="button" class="toggle-pass" onclick="togglePassword('regPassword',this)">👁</button>
+      </div>
+      <div class="input-group">
+        <select id="regRole" onchange="showRoleFields()" required>
+          <option value="">¿Qué tipo de cuenta?</option>
+          <option value="user">👤 Usuario Normal</option>
+          <option value="restaurant">🍽️ Restaurante / Local</option>
+          <option value="delivery">🛵 Domiciliario</option>
+          <option value="nightclub">🎵 Bar / Discoteca</option>
+          <option value="remote_worker">💻 Trabajador Remoto</option>
+        </select>
+      </div>
+      <div id="roleFields"></div>
+      <label class="check-line"><input type="checkbox" id="regTerms" required> Acepto términos y confirmo +18</label>
+      <button type="submit" class="btn-primary" id="btnRegister">Crear Cuenta</button>
+    </form>
+    <div id="authMessage" class="auth-message"></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/auth.js"></script>
+</body>
+</html>

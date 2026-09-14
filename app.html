@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>FENDYX</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/modules.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left">
+    <img id="headerLogo" alt="Logo" style="display:none;height:34px;border-radius:8px;">
+    <span id="headerLogoFallback" class="logo-hex small">⬡</span>
+    <h2 id="headerAppName">FENDYX</h2>
+  </div>
+  <div class="header-right">
+    <div class="token-badge" onclick="showSection('tokens')"><span>◈</span><span id="userTokens">0</span></div>
+    <div class="user-avatar" id="userAvatar" onclick="toggleUserMenu()">U</div>
+  </div>
+</header>
+<div id="userMenu" class="user-menu hidden">
+  <div class="menu-item" onclick="showSection('profile')">👤 Mi Perfil</div>
+  <div class="menu-item" onclick="showSection('tokens')">◈ Mis Tokens</div>
+  <div class="menu-item admin-only hidden" onclick="showSection('admin')">🛡️ Panel Admin</div>
+  <div class="menu-item logout" onclick="handleLogout()">🚪 Cerrar Sesión</div>
+</div>
+
+<main class="app-main">
+  <section id="section-dashboard" class="app-section active">
+    <div class="welcome-banner"><h2>¡Hola, <span id="welcomeName">Usuario</span>! 👋</h2><p id="welcomeRole">Explora tu super-app</p></div>
+    <div class="modules-grid" id="modulesGrid"></div>
+  </section>
+
+  <section id="section-map" class="app-section">
+    <div class="section-header"><h2>📍 Mapa Social</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="row-buttons">
+      <button class="btn-primary half" id="btnShareLocation" onclick="toggleShareLocation()">📡 Compartir ubicación</button>
+      <button class="btn-secondary half" onclick="loadMapUsers()">🔄 Actualizar</button>
+    </div>
+    <div id="mapBox" class="map-box"></div>
+    <h3 class="sub-title">Personas en tu región (100 km)</h3>
+    <div id="nearbyList" class="chips-row"></div>
+  </section>
+
+  <section id="section-radar" class="app-section">
+    <div class="section-header"><h2>🌙 Radar Nocturno</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="radar-status"><div class="radar-circle"><div class="radar-pulse"></div><span class="radar-icon">📡</span></div><p id="radarStatusText">Escaneando…</p></div>
+    <div id="clubOccupancy" class="hidden"><small class="dim" id="occupancyLabel"></small><div class="occupancy"><div id="occupancyBar" style="width:0%"></div></div></div>
+    <div class="radar-controls"><label>Mi estado:</label>
+      <select id="radarStatusSelect" onchange="updateRadarStatus()">
+        <option value="single">💚 Soltero/a</option><option value="married">💍 Casado/a</option>
+        <option value="looking">👀 Buscando conocer</option><option value="unavailable">🚫 No disponible</option>
+      </select>
+    </div>
+    <div id="radarUsers" class="radar-users"></div>
+    <div id="nightclubOwnerPanel" class="owner-panel hidden">
+      <h3>🎵 Registrar mi Discoteca / Bar</h3>
+      <form class="owner-form" onsubmit="saveNightclub(event)">
+        <input type="text" id="clubName" placeholder="Nombre del lugar" required>
+        <input type="text" id="clubAddress" placeholder="Dirección" required>
+        <input type="number" id="clubRadius" placeholder="Radio geocerca (m)" value="300" min="20" required>
+        <input type="number" id="clubCapacity" placeholder="Aforo máximo" value="200" min="10">
+        <button type="button" class="btn-secondary" onclick="setClubLocation()">📍 Usar mi ubicación</button>
+        <span id="clubCoords" class="hint-text">Sin ubicación</span>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="section-events" class="app-section">
+    <div class="section-header"><h2>🎪 Eventos</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="eventOwnerPanel" class="owner-panel hidden">
+      <h3>➕ Crear evento</h3>
+      <form class="owner-form" onsubmit="createEvent(event)">
+        <input type="text" id="eventTitle" placeholder="Nombre del evento" required>
+        <input type="datetime-local" id="eventDate" required>
+        <textarea id="eventDesc" placeholder="Descripción"></textarea>
+        <input type="number" id="eventPrice" placeholder="Entrada (tokens)" step="0.5" min="0" value="0">
+        <button type="submit" class="btn-primary">Publicar</button>
+      </form>
+    </div>
+    <div id="eventsList" class="cards-grid"></div>
+  </section>
+
+  <section id="section-restaurants" class="app-section">
+    <div class="section-header"><h2>🍽️ Restaurantes</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="restaurantsList" class="cards-grid"></div>
+    <div id="restaurantOwnerPanel" class="owner-panel hidden">
+      <h3>🏪 Mi Restaurante</h3>
+      <form class="owner-form" onsubmit="saveRestaurant(event)">
+        <input type="text" id="restName" placeholder="Nombre" required>
+        <input type="text" id="restAddress" placeholder="Dirección" required>
+        <textarea id="restDesc" placeholder="Descripción"></textarea>
+        <input type="number" id="restTables" placeholder="Nº de mesas" min="1" value="5">
+        <label class="check-line"><input type="checkbox" id="restOpen" checked> Abierto ahora</label>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+      <h3>🍕 Agregar plato</h3>
+      <form class="owner-form" onsubmit="addMenuItem(event)">
+        <input type="text" id="menuItemName" placeholder="Nombre del plato" required>
+        <input type="number" id="menuItemPrice" placeholder="Precio tokens" step="0.01" min="0.1" required>
+        <input type="text" id="menuItemDesc" placeholder="Descripción corta">
+        <button type="submit" class="btn-secondary">+ Agregar</button>
+      </form>
+      <div id="myMenuList" class="list-compact"></div>
+    </div>
+  </section>
+
+  <section id="section-reservations" class="app-section">
+    <div class="section-header"><h2>📅 Reservas de Mesa</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="ownerResWrap" class="hidden"><h3 class="sub-title">Reservas en mi restaurante</h3><div id="ownerResList" class="list-compact"></div></div>
+    <h3 class="sub-title">Mis reservas</h3>
+    <div id="myResList" class="list-compact"></div>
+  </section>
+
+  <section id="section-orders" class="app-section">
+    <div class="section-header"><h2>📦 Pedidos</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="ownerOrdersWrap" class="hidden"><h3 class="sub-title">Pedidos de mi restaurante</h3><div id="ownerOrdersList" class="list-compact"></div></div>
+    <div id="driverOrdersWrap" class="hidden"><h3 class="sub-title">Mis entregas activas</h3><div id="driverOrdersList" class="list-compact"></div></div>
+    <h3 class="sub-title">Mis pedidos</h3>
+    <div id="ordersList" class="list-compact"></div>
+  </section>
+
+  <section id="section-delivery" class="app-section">
+    <div class="section-header"><h2>🛵 Zona Domiciliario</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="driverCard" class="driver-card"></div>
+    <div class="avail-card" id="availCard">
+      <div class="avail-dot" id="availDot"></div>
+      <div class="avail-info"><b id="availText">🔴 NO DISPONIBLE</b><small id="offersCount">0 entregas cerca</small></div>
+      <button class="btn-switch" id="btnToggleAvail" onclick="toggleAvailability()">Conectarme</button>
+    </div>
+    <h3 class="sub-title">🎁 Nuevas entregas</h3>
+    <div id="offersList" class="list-compact"></div>
+    <div id="activeDeliveryCard" class="owner-panel hidden">
+      <h3>📦 Entrega activa</h3>
+      <div id="deliverySteps" class="steps"></div>
+      <div class="owner-form">
+        <input type="file" id="proofPhoto" accept="image/*">
+        <input type="text" id="codeInput" placeholder="🔐 Código de entrega (4 dígitos)" maxlength="4" inputmode="numeric">
+        <button class="btn-primary" onclick="confirmDelivery()">✅ Confirmar entrega</button>
+      </div>
+    </div>
+    <h3 class="sub-title">💰 Ganancias</h3>
+    <div class="stats-grid">
+      <div class="stat-card"><span id="earnToday">0</span><small>Hoy</small></div>
+      <div class="stat-card"><span id="earnCount">0</span><small>Entregas</small></div>
+      <div class="stat-card"><span id="earnTips">0</span><small>Propinas</small></div>
+      <div class="stat-card"><span id="earnWeek">0</span><small>Semana</small></div>
+    </div>
+    <div class="owner-panel">
+      <h3>🏦 Retiros</h3>
+      <p class="dim">Disponible: <b id="earnBalance">0</b> tokens</p>
+      <div class="admin-token-form">
+        <input type="number" id="withdrawAmount" placeholder="Monto" min="1">
+        <select id="withdrawMethod"><option value="pago_movil">📱 Pago Móvil</option><option value="binance">🪙 Binance</option><option value="zelle">💵 Zelle</option><option value="banco">🏦 Banco</option></select>
+        <button class="btn-primary" onclick="requestWithdrawal()">Solicitar</button>
+      </div>
+      <div id="withdrawalsList" class="list-compact"></div>
+    </div>
+    <h3 class="sub-title">⭐ Reputación</h3>
+    <div class="rep-card"><span class="rep-stars" id="repStars">★★★★★</span><span class="rep-level" id="repLevel">🥉 Nuevo</span><div id="repBreakdown" class="chips-row"></div></div>
+  </section>
+
+  <section id="section-remote" class="app-section">
+    <div class="section-header"><h2>💼 Trabajo Remoto</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="workersGrid" class="cards-grid"></div>
+    <div id="workerPanel" class="owner-panel hidden">
+      <h3>⚙️ Mi perfil profesional</h3>
+      <form class="owner-form" onsubmit="saveWorkerProfile(event)">
+        <input type="text" id="workerSpecialty" placeholder="Especialidad" required>
+        <input type="number" id="workerRate" placeholder="Tarifa/min (tokens)" step="0.1" min="0.1" required>
+        <textarea id="workerBio" placeholder="Describe tus servicios"></textarea>
+        <label class="check-line"><input type="checkbox" id="workerOnline"> Disponible</label>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+      <h3>📞 Llamadas hacia mí</h3>
+      <div id="myCallsList" class="list-compact"></div>
+    </div>
+  </section>
+
+  <section id="section-agenda" class="app-section">
+    <div class="section-header"><h2>📅 Agenda Profesional</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div id="workerBookingsWrap" class="hidden"><h3 class="sub-title">Solicitudes hacia mí</h3><div id="workerBookingsList" class="list-compact"></div></div>
+    <h3 class="sub-title">Mis citas</h3>
+    <div id="myBookingsList" class="list-compact"></div>
+  </section>
+
+  <section id="section-marketplace" class="app-section">
+    <div class="section-header"><h2>🛒 Marketplace</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <button class="btn-primary half" onclick="document.getElementById('sellForm').classList.toggle('hidden')">+ Vender</button>
+    <form id="sellForm" class="owner-form hidden" onsubmit="publishItem(event)">
+      <input type="text" id="itemTitle" placeholder="Título" required>
+      <textarea id="itemDesc" placeholder="Descripción"></textarea>
+      <input type="number" id="itemPrice" placeholder="Precio tokens" step="0.01" min="0.1" required>
+      <input type="file" id="itemImage" accept="image/*">
+      <button type="submit" class="btn-primary">Publicar</button>
+    </form>
+    <div id="marketplaceGrid" class="cards-grid"></div>
+    <h3 class="sub-title">Mis publicaciones</h3>
+    <div id="myListings" class="list-compact"></div>
+  </section>
+
+  <section id="section-chat" class="app-section">
+    <div class="section-header"><h2>💬 Chat</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="chat-container">
+      <div class="chat-sidebar" id="chatList"></div>
+      <div class="chat-main">
+        <div class="chat-top" id="chatTitle">Selecciona una conversación</div>
+        <div class="chat-messages" id="chatMessages"><p class="empty-state">💬 Tus mensajes aparecerán aquí</p></div>
+        <div class="chat-input">
+          <input type="text" id="messageInput" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')sendMessage()">
+          <button class="btn-send" onclick="sendMessage()">➤</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="section-tokens" class="app-section">
+    <div class="section-header"><h2>◈ Mis Tokens</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="token-balance-card">
+      <span class="balance-label">Saldo disponible</span>
+      <span class="balance-amount" id="tokenBalance">0</span>
+      <span class="balance-usd">≈ $<span id="tokenUSD">0</span> USD</span>
+    </div>
+    <div class="row-buttons">
+      <button class="btn-primary half" onclick="openModal('modal-recharge')">+ Recargar</button>
+      <button class="btn-secondary half" onclick="document.getElementById('transferBox').classList.toggle('hidden')">⇄ Transferir</button>
+    </div>
+    <div id="transferBox" class="owner-panel hidden">
+      <input type="email" id="transferEmail" placeholder="Email del destinatario">
+      <input type="number" id="transferAmount" placeholder="Cantidad" min="0.1" step="0.1">
+      <button class="btn-primary" onclick="transferTokens()">Enviar</button>
+    </div>
+    <h3 class="sub-title">Historial</h3>
+    <div id="transactionsList" class="list-compact"></div>
+  </section>
+
+  <section id="section-profile" class="app-section">
+    <div class="section-header"><h2>👤 Mi Perfil</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="profile-card">
+      <div class="profile-avatar" id="profileAvatar">U</div>
+      <img id="profileAvatarImg" alt="" style="display:none;width:100px;height:100px;border-radius:50%;object-fit:cover;margin:0 auto 15px;">
+      <h3 id="profileName">Usuario</h3>
+      <p id="profileEmail" class="dim">email</p>
+      <span class="role-badge" id="profileRole">user</span>
+      <div class="profile-stats">
+        <div class="stat"><span id="statTokens">0</span><small>Tokens</small></div>
+        <div class="stat"><span id="statVerified">No</span><small>Verificado</small></div>
+        <div class="stat"><span id="statStatus">-</span><small>Estado</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="section-profileedit" class="app-section">
+    <div class="section-header"><h2>✏️ Perfil Pro</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <form class="owner-panel owner-form" onsubmit="saveProfilePro(event)">
+      <input type="text" id="proName" placeholder="Nombre">
+      <textarea id="proBio" placeholder="Bio"></textarea>
+      <input type="text" id="proInterests" placeholder="Intereses (coma): música, cine, gym">
+      <label class="dim">Foto de perfil</label><input type="file" id="proAvatar" accept="image/*">
+      <label class="dim">Galería (varias)</label><input type="file" id="proGallery" accept="image/*" multiple>
+      <button type="button" class="btn-secondary hidden" id="btnJoinKyc" onclick="joinKycRoom()">🎥 Unirme a verificación KYC</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </form>
+  </section>
+
+  <section id="section-admin" class="app-section">
+    <div class="section-header"><h2>🛡️ Panel Admin</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="switchAdminTab('overview',this)">📊 Resumen</button>
+      <button class="admin-tab" onclick="switchAdminTab('branding',this)">🎨 Branding</button>
+      <button class="admin-tab" onclick="switchAdminTab('users',this)">👥 Usuarios</button>
+      <button class="admin-tab" onclick="switchAdminTab('tokens',this)">◈ Tokens</button>
+      <button class="admin-tab" onclick="switchAdminTab('content',this)">📋 Contenido</button>
+      <button class="admin-tab" onclick="switchAdminTab('withdrawals',this)">🏦 Retiros</button>
+      <button class="admin-tab" onclick="switchAdminTab('kyc',this)">🎥 KYC</button>
+      <button class="admin-tab" onclick="switchAdminTab('audit',this)">🕵️ Auditoría</button>
+    </div>
+    <div id="admin-overview" class="admin-panel active">
+      <div class="stats-grid">
+        <div class="stat-card"><span id="kpiUsers">0</span><small>Usuarios</small></div>
+        <div class="stat-card"><span id="kpiTokens">0</span><small>Tokens</small></div>
+        <div class="stat-card"><span id="kpiOrders">0</span><small>Pedidos</small></div>
+        <div class="stat-card"><span id="kpiCalls">0</span><small>Llamadas</small></div>
+      </div>
+      <h3 class="sub-title">Actividad</h3><div id="activityFeed" class="list-compact"></div>
+    </div>
+    <div id="admin-branding" class="admin-panel">
+      <div class="branding-preview"><img id="adminLogoPreview" alt="" style="display:none;max-width:160px;border-radius:14px;"><span id="adminLogoFallback" class="logo-hex large">⬡</span></div>
+      <div class="upload-area" onclick="document.getElementById('logoUpload').click()">
+        <input type="file" id="logoUpload" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadLogo(event)">
+        <p>📤 Subir nuevo logo</p>
+      </div>
+      <div class="owner-form"><input type="text" id="adminAppName" placeholder="Nombre de la app"><button class="btn-primary" onclick="saveAppName()">Guardar nombre</button></div>
+    </div>
+    <div id="admin-users" class="admin-panel">
+      <input type="text" id="adminUsersSearch" class="search-box" placeholder="🔍 Buscar…" oninput="renderAdminUsers()">
+      <div class="admin-table-container"><table class="admin-table">
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Tokens</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="adminUsersTable"></tbody></table></div>
+    </div>
+    <div id="admin-tokens" class="admin-panel">
+      <div class="admin-token-form">
+        <input type="email" id="adminTokenEmail" placeholder="Email"><input type="number" id="adminTokenAmount" placeholder="Cantidad +/-">
+        <button class="btn-primary" onclick="adminAdjustTokens()">Aplicar</button>
+      </div>
+      <div id="adminTransactions" class="list-compact"></div>
+    </div>
+    <div id="admin-content" class="admin-panel">
+      <div class="admin-content-grid">
+        <div class="content-card"><h4>🍽️ Restaurantes</h4><div id="adminRestaurants"></div></div>
+        <div class="content-card"><h4>🎵 Discotecas</h4><div id="adminNightclubs"></div></div>
+        <div class="content-card"><h4>🛒 Marketplace</h4><div id="adminMarket"></div></div>
+      </div>
+    </div>
+    <div id="admin-withdrawals" class="admin-panel"><div id="withdrawalsAdmin" class="list-compact"></div></div>
+    <div id="admin-kyc" class="admin-panel"><p class="dim">Verificación por videollamada en vivo:</p><div id="kycList" class="list-compact"></div></div>
+    <div id="admin-audit" class="admin-panel">
+      <input id="auditSearch" class="search-box" placeholder="🔍 Buscar en todos los chats…" oninput="runAudit()">
+      <div id="auditResults" class="list-compact"></div>
+    </div>
+  </section>
+</main>
+
+<button id="cartFab" class="cart-fab hidden" onclick="openCart()">🛒<span id="cartCount" class="fab-badge">0</span></button>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="showSection('dashboard')"><span class="nav-icon">🏠</span><span class="nav-label">Inicio</span></button>
+  <button class="nav-item" onclick="showSection('map')"><span class="nav-icon">📍</span><span class="nav-label">Mapa</span></button>
+  <button class="nav-item" onclick="showSection('radar')"><span class="nav-icon">🌙</span><span class="nav-label">Radar</span></button>
+  <button class="nav-item" onclick="showSection('chat')"><span class="nav-icon">💬</span><span class="nav-label">Chat</span></button>
+  <button class="nav-item" onclick="showSection('tokens')"><span class="nav-icon">◈</span><span class="nav-label">Tokens</span></button>
+</nav>
+
+<div id="modal-recharge" class="modal hidden"><div class="modal-content">
+  <h3>◈ Recargar</h3><p class="dim">1 Token = $1 USD</p>
+  <div class="recharge-options">
+    <button onclick="processRecharge(5)">5<br><small>$5</small></button><button onclick="processRecharge(10)">10<br><small>$10</small></button>
+    <button onclick="processRecharge(25)">25<br><small>$25</small></button><button onclick="processRecharge(50)">50<br><small>$50</small></button>
+  </div>
+  <input type="number" id="customRecharge" placeholder="Cantidad" min="1">
+  <button class="btn-primary" onclick="processRecharge(document.getElementById('customRecharge').value)">Recargar</button>
+  <button class="btn-secondary" onclick="closeModal('modal-recharge')">Cancelar</button>
+</div></div>
+
+<div id="modal-restaurant" class="modal hidden"><div class="modal-content wide">
+  <div class="modal-head"><h3 id="restModalTitle">Menú</h3><button class="modal-close" onclick="closeModal('modal-restaurant')">✕</button></div>
+  <div id="restModalMenu" class="list-compact"></div>
+</div></div>
+
+<div id="modal-cart" class="modal hidden"><div class="modal-content">
+  <div class="modal-head"><h3>🛒 Carrito</h3><button class="modal-close" onclick="closeModal('modal-cart')">✕</button></div>
+  <div id="cartItems" class="list-compact"></div>
+  <div class="cart-total">Total: <strong id="cartTotal">0</strong> tokens</div>
+  <input type="text" id="cartAddress" placeholder="Dirección de entrega" class="input-full">
+  <button class="btn-primary" onclick="checkout()">Confirmar pedido</button>
+</div></div>
+
+<div id="modal-userprofile" class="modal hidden"><div class="modal-content wide">
+  <div class="modal-head"><h3 id="upName">Usuario</h3><button class="modal-close" onclick="closeModal('modal-userprofile')">✕</button></div>
+  <div class="up-hero">
+    <img id="upAvatar" alt="" class="up-avatar hidden">
+    <div class="up-avatar-letter" id="upAvatarLetter">U</div>
+    <div class="up-badges"><span class="role-badge" id="upRole">user</span><span id="upVerified"></span></div>
+    <div class="rep-stars" id="upRating">★★★★★</div>
+  </div>
+  <p id="upBio" class="dim"></p>
+  <h4 class="sub-title">🎯 Intereses</h4><div id="upInterests" class="chips-row"></div>
+  <h4 class="sub-title">📸 Galería</h4><div id="upGallery" class="gallery-grid"></div>
+  <button class="btn-primary" onclick="messageFromProfile()">💬 Enviar mensaje</button>
+</div></div>
+
+<div id="modal-reserve" class="modal hidden"><div class="modal-content">
+  <div class="modal-head"><h3>📅 Reservar mesa</h3><button class="modal-close" onclick="closeModal('modal-reserve')">✕</button></div>
+  <input type="date" id="resDate" class="input-full"><input type="time" id="resTime" class="input-full">
+  <input type="number" id="resPeople" class="input-full" value="2" min="1" max="20">
+  <button class="btn-primary" onclick="confirmReserve()">Confirmar</button>
+</div></div>
+
+<div id="modal-book" class="modal hidden"><div class="modal-content">
+  <div class="modal-head"><h3>💼 Reservar sesión</h3><button class="modal-close" onclick="closeModal('modal-book')">✕</button></div>
+  <input type="date" id="bookDate" class="input-full"><input type="time" id="bookTime" class="input-full">
+  <select id="bookDuration" class="input-full"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option></select>
+  <button class="btn-primary" onclick="confirmBooking()">Reservar</button>
+</div></div>
+
+<div id="modal-kyc" class="modal hidden"><div class="modal-content wide">
+  <div class="modal-head"><h3 id="kycTitle">🎥 KYC</h3><button class="modal-close" onclick="closeKyc()">✕</button></div>
+  <div id="kycContainer" class="jitsi-container"></div>
+  <button class="btn-primary hidden" id="kycVerifyBtn" onclick="kycMarkVerified()">✅ Marcar VERIFICADO</button>
+</div></div>
+
+<div id="modal-call" class="modal hidden"><div class="modal-content wide">
+  <div class="call-info"><span id="callTimer">00:00</span><span id="callCost">◈ 0.00</span></div>
+  <div id="jitsiContainer" class="jitsi-container"></div>
+  <button class="btn-danger full" onclick="endCall()">📞 Terminar</button>
+</div></div>
+
+<div id="proximityBanner" class="proximity-banner hidden" onclick="this.classList.add('hidden')">🔥 <b id="proximityText"></b></div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://meet.jit.si/external_api.js" defer></script>
+<script src="js/config.js"></script>
+<script src="js/core.js"></script>
+</body>
+</html>

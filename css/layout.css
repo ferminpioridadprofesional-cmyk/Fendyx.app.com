@@ -1,0 +1,30 @@
+.app-header{position:fixed;top:0;left:0;right:0;height:62px;z-index:120;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:rgba(8,9,14,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.header-left{display:flex;align-items:center;gap:10px}
+.header-left h2{font-family:'Orbitron';font-size:1.15rem;letter-spacing:3px;background:var(--gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.header-right{display:flex;align-items:center;gap:12px}
+.token-badge{display:flex;gap:6px;align-items:center;cursor:pointer;padding:7px 14px;border-radius:999px;background:rgba(0,217,255,.1);border:1px solid var(--border);color:var(--primary);font-weight:800}
+.user-avatar{width:40px;height:40px;border-radius:50%;cursor:pointer;background:var(--gradient);color:#04060c;display:flex;align-items:center;justify-content:center;font-weight:900;box-shadow:var(--glow)}
+.user-menu{position:fixed;top:68px;right:14px;z-index:200;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:8px;backdrop-filter:blur(18px)}
+.menu-item{padding:12px 14px;border-radius:11px;cursor:pointer;font-weight:600}
+.menu-item:hover{background:rgba(0,217,255,.1);color:var(--primary)}
+.menu-item.logout{color:var(--error);border-top:1px solid var(--border);margin-top:6px}
+.app-main{padding:76px 16px 96px;max-width:1100px;margin:0 auto;position:relative;z-index:1}
+.app-section{display:none}.app-section.active{display:block;animation:fadeIn .3s}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.section-header h2{font-family:'Orbitron';font-size:1.35rem}
+.btn-back{padding:9px 16px;border-radius:12px;cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--dim);font-weight:700}
+.welcome-banner{border-radius:22px;padding:26px 22px;margin-bottom:22px;background:linear-gradient(120deg,rgba(0,217,255,.16),rgba(168,85,247,.16));border:1px solid var(--border);position:relative;overflow:hidden}
+.welcome-banner::after{content:'⬡';position:absolute;right:-10px;top:-30px;font-size:7rem;opacity:.08}
+.welcome-banner h2{font-family:'Orbitron';font-size:1.5rem}
+.modules-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.module-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:22px 12px;text-align:center;cursor:pointer;transition:.25s}
+.module-card:hover{transform:translateY(-5px);border-color:var(--border-strong);box-shadow:var(--glow)}
+.module-card .icon{font-size:2.3rem;display:block;margin-bottom:10px}
+.module-card h3{font-size:.92rem}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:70px;z-index:120;display:flex;justify-content:space-around;align-items:center;background:rgba(8,9,14,.92);backdrop-filter:blur(16px);border-top:1px solid var(--border)}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 16px;border:none;border-radius:14px;background:transparent;color:var(--dim);cursor:pointer}
+.nav-item.active,.nav-item:hover{color:var(--primary);background:rgba(0,217,255,.1)}
+.nav-icon{font-size:1.35rem}.nav-label{font-size:.68rem;font-weight:700}
+.cart-fab{position:fixed;right:20px;bottom:88px;z-index:150;width:60px;height:60px;border-radius:50%;border:none;cursor:pointer;background:var(--gradient);font-size:1.5rem;box-shadow:0 10px 30px rgba(0,217,255,.4)}
+.fab-badge{position:absolute;top:-4px;right:-4px;background:var(--accent);color:#fff;border-radius:999px;font-size:.72rem;font-weight:900;padding:3px 8px}
+@media(max-width:760px){.modules-grid{grid-template-columns:repeat(2,1fr)}.app-main{padding:72px 12px 92px}}

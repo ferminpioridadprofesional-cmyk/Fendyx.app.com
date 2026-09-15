@@ -1,4 +1,7 @@
 'use strict';
+let pendingSignup = null;
+let pendingRecoverEmail = null;
+
 function switchAuthTab(tab) {
   document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
   document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
@@ -15,7 +18,7 @@ function showRoleFields() {
   const role = document.getElementById('regRole').value, c = document.getElementById('roleFields');
   const f = {
     restaurant: [['regRIF','RIF del negocio'],['regBusinessName','Nombre del local'],['regAddress','Dirección']],
-    delivery: [['regLicense','Número de licencia'],['regPlate','Placa'],['regVehicleType','moto|bicicleta|carro']],
+    delivery: [['regLicense','Número de licencia'],['regPlate','Placa'],['regVehicleType','']],
     nightclub: [['regClubName','Nombre del bar/discoteca'],['regClubAddress','Dirección']],
     remote_worker: [['regSpecialty','Especialidad'],['regRate','Tarifa por minuto']]
   }[role] || [];
@@ -35,12 +38,14 @@ function friendlyError(msg) {
   const m = (msg || '').toLowerCase();
   if (m.includes('already registered')) return 'Este correo ya tiene cuenta. Inicia sesión.';
   if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
-  if (m.includes('email not confirmed')) return 'Confirma tu correo antes de entrar.';
-  if (m.includes('rate limit')) return 'Muchos intentos. Espera 1 minuto.';
+  if (m.includes('email not confirmed')) return 'Verifica tu correo con el código de 6 dígitos.';
+  if (m.includes('rate limit') || m.includes('once every')) return 'Espera 60 segundos entre envíos de código.';
+  if (m.includes('invalid otp') || m.includes('expired') || m.includes('token')) return 'Código incorrecto o expirado. Pide uno nuevo.';
   if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
   return msg || 'Error inesperado. Intenta de nuevo.';
 }
 
+// ===== LOGIN =====
 async function handleLogin(e) {
   e.preventDefault();
   setBtnLoading('btnLogin', true); showAuthMessage('', '');
@@ -57,11 +62,13 @@ async function handleLogin(e) {
   } finally { setBtnLoading('btnLogin', false); }
 }
 
+// ===== REGISTRO =====
 async function handleRegister(e) {
   e.preventDefault();
   const age = parseInt(document.getElementById('regAge').value, 10);
   const role = document.getElementById('regRole').value;
   const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const password = document.getElementById('regPassword').value;
   if (!age || age < 18) { showAuthMessage('Debes ser mayor de 18 años.', 'error'); return; }
   if (!role) { showAuthMessage('Selecciona un tipo de cuenta.', 'error'); return; }
   setBtnLoading('btnRegister', true); showAuthMessage('', '');
@@ -80,33 +87,78 @@ async function handleRegister(e) {
   };
   try {
     const { data, error } = await db.auth.signUp({
-      email, password: document.getElementById('regPassword').value,
+      email, password,
       options: { data: meta, emailRedirectTo: location.origin + '/index.html' }
     });
     if (error) throw error;
     localStorage.setItem('fendyx_pending_meta', JSON.stringify(meta));
-    if (data.session) { location.replace('app.html'); }
-    else {
-      showAuthMessage('✅ Cuenta creada. Revisa tu correo y luego inicia sesión.', 'success');
-      document.getElementById('form-register').reset();
-      document.getElementById('roleFields').innerHTML = '';
-      setTimeout(() => switchAuthTab('login'), 1800);
-    }
+    if (data.session) { location.replace('app.html'); return; }
+    pendingSignup = { email, password };
+    document.getElementById('verifyEmailLabel').textContent = email;
+    document.getElementById('verifyCode').value = '';
+    openModal('modal-verify');
+    showAuthMessage('📧 Código de 6 dígitos enviado a tu correo.', 'success');
   } catch (err) {
     showAuthMessage('❌ ' + friendlyError(err.message), 'error');
   } finally { setBtnLoading('btnRegister', false); }
 }
 
-async function resetPassword() {
-  const email = prompt('Ingresa tu correo:');
-  if (!email) return;
-  try {
-    const { error } = await db.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: location.origin });
-    showToast(error ? '❌ ' + friendlyError(error.message) : '📧 Correo enviado');
-  } catch { showToast('❌ No se pudo enviar'); }
+// ===== VERIFICACIÓN DE CORREO (CÓDIGO 6 DÍGITOS) =====
+async function confirmSignupCode() {
+  const code = document.getElementById('verifyCode').value.trim();
+  if (!pendingSignup) { showToast('Primero crea tu cuenta'); return; }
+  if (!/^\d{6}$/.test(code)) { showToast('El código tiene 6 dígitos'); return; }
+  const { error } = await db.auth.verifyOTP({ email: pendingSignup.email, token: code, type: 'signup' });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  closeModal('modal-verify');
+  showToast('✅ Correo verificado. ¡Bienvenido a FENDYX!');
+  setTimeout(() => location.replace('app.html'), 900);
+}
+async function resendSignupCode() {
+  if (!pendingSignup) return;
+  const { error } = await db.auth.resend({ type: 'signup', email: pendingSignup.email });
+  showToast(error ? '❌ ' + friendlyError(error.message) : '📧 Código reenviado');
 }
 
-// Aviso de cuenta baneada al volver al login
+// ===== RECUPERAR CONTRASEÑA (3 PASOS) =====
+function openRecover() {
+  document.getElementById('recoverStep1').classList.remove('hidden');
+  document.getElementById('recoverStep2').classList.add('hidden');
+  document.getElementById('recoverStep3').classList.add('hidden');
+  openModal('modal-recover');
+}
+async function recoverSendCode() {
+  const email = document.getElementById('recoverEmail').value.trim().toLowerCase();
+  if (!email) { showToast('Escribe tu correo'); return; }
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  pendingRecoverEmail = email;
+  document.getElementById('recoverStep1').classList.add('hidden');
+  document.getElementById('recoverStep2').classList.remove('hidden');
+  document.getElementById('recoverCode').value = '';
+  showToast('📧 Código enviado a ' + email);
+}
+async function recoverVerifyCode() {
+  const code = document.getElementById('recoverCode').value.trim();
+  if (!/^\d{6}$/.test(code)) { showToast('El código tiene 6 dígitos'); return; }
+  const { error } = await db.auth.verifyOTP({ email: pendingRecoverEmail, token: code, type: 'recovery' });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  document.getElementById('recoverStep2').classList.add('hidden');
+  document.getElementById('recoverStep3').classList.remove('hidden');
+  showToast('✅ Código correcto. Crea tu nueva contraseña');
+}
+async function recoverSavePass() {
+  const np = document.getElementById('recoverNewPass').value;
+  if (np.length < 6) { showToast('Mínimo 6 caracteres'); return; }
+  const { error } = await db.auth.updateUser({ password: np });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  await db.auth.signOut();
+  closeModal('modal-recover');
+  showAuthMessage('✅ Contraseña cambiada. Ya puedes iniciar sesión.', 'success');
+  switchAuthTab('login');
+}
+
+// Aviso de cuenta baneada
 if (location.search.includes('banned=1')) {
   document.addEventListener('DOMContentLoaded', () => showAuthMessage('🚫 Cuenta suspendida por el administrador', 'error'));
 }

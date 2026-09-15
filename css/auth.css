@@ -1,27 +1,171 @@
-.auth-bg{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;position:relative;z-index:1}
-.auth-card{width:100%;max-width:430px;background:var(--card);border:1px solid var(--border);border-radius:28px;padding:38px 26px;backdrop-filter:blur(18px);box-shadow:0 20px 60px rgba(0,0,0,.55)}
-.auth-logo{text-align:center;margin-bottom:26px}
-.auth-logo h1{font-family:'Orbitron';font-weight:900;font-size:2.6rem;letter-spacing:6px;background:var(--gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-top:8px}
-.auth-tagline{color:var(--dim);letter-spacing:2px;margin-top:6px;font-size:.95rem}
-.auth-tabs{display:flex;gap:10px;margin-bottom:22px}
-.tab{flex:1;padding:13px 8px;border-radius:14px;cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--dim);font-family:'Rajdhani';font-weight:700;font-size:1rem;transition:.25s}
-.tab.active{background:var(--gradient);color:#04060c;border-color:transparent;box-shadow:0 6px 22px rgba(0,217,255,.35)}
-.auth-form{display:none}.auth-form.active{display:block;animation:fadeIn .3s}
-.input-group{margin-bottom:14px;position:relative}
-.input-group input,.input-group select{width:100%;padding:14px 16px;background:rgba(255,255,255,.045);border:1px solid var(--border);border-radius:14px;color:var(--text);font-family:'Rajdhani';font-size:1.02rem}
-.input-group input:focus,.input-group select:focus{outline:none;border-color:var(--border-strong);box-shadow:0 0 0 3px rgba(0,217,255,.12)}
-.input-group select option{background:var(--dark-2)}
-.password-group input{padding-right:52px}
-.toggle-pass{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:10px;border:none;cursor:pointer;background:transparent;color:var(--dim);font-size:1.1rem}
-.toggle-pass:hover{color:var(--primary);background:rgba(0,217,255,.1)}
-.check-line{display:flex;gap:10px;align-items:center;color:var(--dim);font-size:.95rem;margin:4px 0 14px}
-.check-line input{accent-color:var(--primary);width:18px;height:18px}
-.auth-link{text-align:center;margin-top:14px;color:var(--dim);cursor:pointer;font-size:.92rem}
-.auth-message{margin-top:16px;padding:13px;border-radius:14px;text-align:center;display:none;font-weight:600}
-.auth-message.error{display:block;background:rgba(255,59,107,.12);border:1px solid var(--error);color:var(--error)}
-.auth-message.success{display:block;background:rgba(0,255,157,.1);border:1px solid var(--success);color:var(--success)}
-/* Código OTP 6 dígitos */
-.otp-input{width:100%;text-align:center;font-size:2rem;letter-spacing:12px;font-family:'Orbitron';padding:14px;background:rgba(255,255,255,.05);border:1px solid var(--border-strong);border-radius:14px;color:var(--text);margin:14px 0}
-.otp-input:focus{outline:none;box-shadow:0 0 0 3px rgba(0,217,255,.15)}
-.modal-content h3{font-family:'Orbitron';margin-bottom:8px}
-.modal-content .btn-secondary{margin-top:8px}
+'use strict';
+let pendingSignup = null;
+let pendingRecoverEmail = null;
+
+function switchAuthTab(tab) {
+  document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+  document.getElementById('form-login').classList.toggle('active', tab === 'login');
+  document.getElementById('form-register').classList.toggle('active', tab === 'register');
+  showAuthMessage('', '');
+}
+function togglePassword(id, btn) {
+  const i = document.getElementById(id);
+  i.type = i.type === 'password' ? 'text' : 'password';
+  btn.textContent = i.type === 'password' ? '👁' : '🙈';
+}
+function showRoleFields() {
+  const role = document.getElementById('regRole').value, c = document.getElementById('roleFields');
+  const f = {
+    restaurant: [['regRIF','RIF del negocio'],['regBusinessName','Nombre del local'],['regAddress','Dirección']],
+    delivery: [['regLicense','Número de licencia'],['regPlate','Placa'],['regVehicleType','']],
+    nightclub: [['regClubName','Nombre del bar/discoteca'],['regClubAddress','Dirección']],
+    remote_worker: [['regSpecialty','Especialidad'],['regRate','Tarifa por minuto']]
+  }[role] || [];
+  c.innerHTML = f.map(x => x[0] === 'regVehicleType'
+    ? `<div class="input-group"><select id="regVehicle"><option value="moto">🏍️ Moto</option><option value="bicicleta">🚲 Bicicleta</option><option value="carro">🚗 Carro</option></select></div>`
+    : `<div class="input-group"><input type="text" id="${x[0]}" placeholder="${x[1]}"></div>`).join('');
+}
+function showAuthMessage(msg, type) {
+  const el = document.getElementById('authMessage');
+  el.textContent = msg; el.className = 'auth-message' + (type ? ' ' + type : '');
+}
+function setBtnLoading(id, on) {
+  const b = document.getElementById(id);
+  if (b) { b.disabled = on; b.textContent = on ? 'Procesando…' : (id === 'btnLogin' ? 'Entrar' : 'Crear Cuenta'); }
+}
+function isNetworkErr(msg) {
+  const m = (msg || '').toLowerCase();
+  return m.includes('504') || m.includes('502') || m.includes('timeout') || m.includes('http error') || m.includes('failed to fetch');
+}
+function friendlyError(msg) {
+  const m = (msg || '').toLowerCase();
+  if (isNetworkErr(m)) return 'El servidor tardó demasiado (ajustes de correo). Reintentamos automáticamente; si persiste, espera 1 minuto.';
+  if (m.includes('already registered')) return 'Este correo ya tiene cuenta. Inicia sesión.';
+  if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
+  if (m.includes('email not confirmed')) return 'Verifica tu correo con el código de 6 dígitos.';
+  if (m.includes('rate limit') || m.includes('once every')) return 'Espera 60 segundos entre envíos de código.';
+  if (m.includes('invalid otp') || m.includes('expired') || m.includes('token')) return 'Código incorrecto o expirado. Pide uno nuevo.';
+  if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
+  return msg || 'Error inesperado. Intenta de nuevo.';
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+// ===== LOGIN =====
+async function handleLogin(e) {
+  e.preventDefault();
+  setBtnLoading('btnLogin', true); showAuthMessage('', '');
+  try {
+    let res = await db.auth.signInWithPassword({
+      email: document.getElementById('loginEmail').value.trim().toLowerCase(),
+      password: document.getElementById('loginPassword').value
+    });
+    if (res.error && isNetworkErr(res.error.message)) { await wait(1500); res = await db.auth.signInWithPassword({
+      email: document.getElementById('loginEmail').value.trim().toLowerCase(),
+      password: document.getElementById('loginPassword').value }); }
+    if (res.error) throw res.error;
+    location.replace('app.html');
+  } catch (err) {
+    showAuthMessage('❌ ' + friendlyError(err.message), 'error');
+  } finally { setBtnLoading('btnLogin', false); }
+}
+
+// ===== REGISTRO (con reintento automático anti-504) =====
+async function handleRegister(e) {
+  e.preventDefault();
+  const age = parseInt(document.getElementById('regAge').value, 10);
+  const role = document.getElementById('regRole').value;
+  const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const password = document.getElementById('regPassword').value;
+  if (!age || age < 18) { showAuthMessage('Debes ser mayor de 18 años.', 'error'); return; }
+  if (!role) { showAuthMessage('Selecciona un tipo de cuenta.', 'error'); return; }
+  setBtnLoading('btnRegister', true); showAuthMessage('', '');
+  const meta = {
+    full_name: document.getElementById('regName').value.trim(), age, role,
+    rif: document.getElementById('regRIF')?.value || '',
+    business_name: document.getElementById('regBusinessName')?.value || '',
+    address: document.getElementById('regAddress')?.value || '',
+    license: document.getElementById('regLicense')?.value || '',
+    plate: document.getElementById('regPlate')?.value || '',
+    vehicle: document.getElementById('regVehicle')?.value || '',
+    club_name: document.getElementById('regClubName')?.value || '',
+    club_address: document.getElementById('regClubAddress')?.value || '',
+    specialty: document.getElementById('regSpecialty')?.value || '',
+    rate: document.getElementById('regRate')?.value || ''
+  };
+  const payload = { email, password, options: { data: meta, emailRedirectTo: location.origin + '/index.html' } };
+  try {
+    let res = await db.auth.signUp(payload);
+    if (res.error && isNetworkErr(res.error.message)) { await wait(2000); res = await db.auth.signUp(payload); }
+    if (res.error) throw res.error;
+    localStorage.setItem('fendyx_pending_meta', JSON.stringify(meta));
+    if (res.data.session) { location.replace('app.html'); return; }
+    pendingSignup = { email, password };
+    document.getElementById('verifyEmailLabel').textContent = email;
+    document.getElementById('verifyCode').value = '';
+    openModal('modal-verify');
+    showAuthMessage('📧 Código de 6 dígitos enviado a tu correo.', 'success');
+  } catch (err) {
+    showAuthMessage('❌ ' + friendlyError(err.message), 'error');
+  } finally { setBtnLoading('btnRegister', false); }
+}
+
+// ===== VERIFICACIÓN DE CORREO =====
+async function confirmSignupCode() {
+  const code = document.getElementById('verifyCode').value.trim();
+  if (!pendingSignup) { showToast('Primero crea tu cuenta'); return; }
+  if (!/^\d{6}$/.test(code)) { showToast('El código tiene 6 dígitos'); return; }
+  const { error } = await db.auth.verifyOTP({ email: pendingSignup.email, token: code, type: 'signup' });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  closeModal('modal-verify');
+  showToast('✅ Correo verificado. ¡Bienvenido a FENDYX!');
+  setTimeout(() => location.replace('app.html'), 900);
+}
+async function resendSignupCode() {
+  if (!pendingSignup) return;
+  const { error } = await db.auth.resend({ type: 'signup', email: pendingSignup.email });
+  showToast(error ? '❌ ' + friendlyError(error.message) : '📧 Código reenviado');
+}
+
+// ===== RECUPERAR CONTRASEÑA (3 PASOS) =====
+function openRecover() {
+  document.getElementById('recoverStep1').classList.remove('hidden');
+  document.getElementById('recoverStep2').classList.add('hidden');
+  document.getElementById('recoverStep3').classList.add('hidden');
+  openModal('modal-recover');
+}
+async function recoverSendCode() {
+  const email = document.getElementById('recoverEmail').value.trim().toLowerCase();
+  if (!email) { showToast('Escribe tu correo'); return; }
+  let res = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+  if (res.error && isNetworkErr(res.error.message)) { await wait(2000); res = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin }); }
+  if (res.error) { showToast('❌ ' + friendlyError(res.error.message)); return; }
+  pendingRecoverEmail = email;
+  document.getElementById('recoverStep1').classList.add('hidden');
+  document.getElementById('recoverStep2').classList.remove('hidden');
+  document.getElementById('recoverCode').value = '';
+  showToast('📧 Código enviado a ' + email);
+}
+async function recoverVerifyCode() {
+  const code = document.getElementById('recoverCode').value.trim();
+  if (!/^\d{6}$/.test(code)) { showToast('El código tiene 6 dígitos'); return; }
+  const { error } = await db.auth.verifyOTP({ email: pendingRecoverEmail, token: code, type: 'recovery' });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  document.getElementById('recoverStep2').classList.add('hidden');
+  document.getElementById('recoverStep3').classList.remove('hidden');
+  showToast('✅ Código correcto. Crea tu nueva contraseña');
+}
+async function recoverSavePass() {
+  const np = document.getElementById('recoverNewPass').value;
+  if (np.length < 6) { showToast('Mínimo 6 caracteres'); return; }
+  const { error } = await db.auth.updateUser({ password: np });
+  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  await db.auth.signOut();
+  closeModal('modal-recover');
+  showAuthMessage('✅ Contraseña cambiada. Ya puedes iniciar sesión.', 'success');
+  switchAuthTab('login');
+}
+
+if (location.search.includes('banned=1')) {
+  document.addEventListener('DOMContentLoaded', () => showAuthMessage('🚫 Cuenta suspendida por el administrador', 'error'));
+}

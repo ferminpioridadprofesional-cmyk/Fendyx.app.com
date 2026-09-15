@@ -20,3 +20,8 @@
 .auth-message{margin-top:16px;padding:13px;border-radius:14px;text-align:center;display:none;font-weight:600}
 .auth-message.error{display:block;background:rgba(255,59,107,.12);border:1px solid var(--error);color:var(--error)}
 .auth-message.success{display:block;background:rgba(0,255,157,.1);border:1px solid var(--success);color:var(--success)}
+/* Código OTP 6 dígitos */
+.otp-input{width:100%;text-align:center;font-size:2rem;letter-spacing:12px;font-family:'Orbitron';padding:14px;background:rgba(255,255,255,.05);border:1px solid var(--border-strong);border-radius:14px;color:var(--text);margin:14px 0}
+.otp-input:focus{outline:none;box-shadow:0 0 0 3px rgba(0,217,255,.15)}
+.modal-content h3{font-family:'Orbitron';margin-bottom:8px}
+.modal-content .btn-secondary{margin-top:8px}

@@ -30,7 +30,7 @@
         <button type="button" class="toggle-pass" onclick="togglePassword('loginPassword',this)">👁</button>
       </div>
       <button type="submit" class="btn-primary" id="btnLogin">Entrar</button>
-      <p class="auth-link" onclick="resetPassword()">¿Olvidaste tu contraseña?</p>
+      <p class="auth-link" onclick="openRecover()">🔑 ¿Olvidaste tu contraseña?</p>
     </form>
     <form id="form-register" class="auth-form" onsubmit="handleRegister(event)">
       <div class="input-group"><input type="text" id="regName" placeholder="Nombre completo" autocomplete="name" required></div>
@@ -57,6 +57,38 @@
     <div id="authMessage" class="auth-message"></div>
   </div>
 </div>
+
+<!-- MODAL: Código de verificación de correo -->
+<div id="modal-verify" class="modal hidden"><div class="modal-content">
+  <h3>📧 Verifica tu correo</h3>
+  <p class="dim">Escribe el código de 6 dígitos enviado a <b id="verifyEmailLabel"></b></p>
+  <input type="text" id="verifyCode" class="otp-input" maxlength="6" inputmode="numeric" placeholder="••••••">
+  <button class="btn-primary" onclick="confirmSignupCode()">Verificar y entrar</button>
+  <button class="btn-secondary" onclick="resendSignupCode()">Reenviar código</button>
+  <button class="btn-secondary" onclick="closeModal('modal-verify')">Cancelar</button>
+</div></div>
+
+<!-- MODAL: Recuperar contraseña (3 pasos) -->
+<div id="modal-recover" class="modal hidden"><div class="modal-content">
+  <div class="modal-head"><h3>🔑 Recuperar contraseña</h3><button class="modal-close" onclick="closeModal('modal-recover')">✕</button></div>
+  <div id="recoverStep1">
+    <p class="dim">Paso 1 de 3: ingresa tu correo</p>
+    <input type="email" id="recoverEmail" class="input-full" placeholder="tu@email.com">
+    <button class="btn-primary" onclick="recoverSendCode()">Enviar código</button>
+  </div>
+  <div id="recoverStep2" class="hidden">
+    <p class="dim">Paso 2 de 3: código de 6 dígitos</p>
+    <input type="text" id="recoverCode" class="otp-input" maxlength="6" inputmode="numeric" placeholder="••••••">
+    <button class="btn-primary" onclick="recoverVerifyCode()">Verificar código</button>
+    <button class="btn-secondary" onclick="recoverSendCode()">Reenviar código</button>
+  </div>
+  <div id="recoverStep3" class="hidden">
+    <p class="dim">Paso 3 de 3: crea tu nueva contraseña</p>
+    <input type="password" id="recoverNewPass" class="input-full" minlength="6" placeholder="Nueva contraseña (mín. 6)">
+    <button class="btn-primary" onclick="recoverSavePass()">Guardar y entrar</button>
+  </div>
+</div></div>
+
 <div id="toast" class="toast hidden"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/config.js"></script>

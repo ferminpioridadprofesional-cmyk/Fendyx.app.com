@@ -34,8 +34,13 @@ function setBtnLoading(id, on) {
   const b = document.getElementById(id);
   if (b) { b.disabled = on; b.textContent = on ? 'Procesando…' : (id === 'btnLogin' ? 'Entrar' : 'Crear Cuenta'); }
 }
+function isNetworkErr(msg) {
+  const m = (msg || '').toLowerCase();
+  return m.includes('504') || m.includes('502') || m.includes('timeout') || m.includes('http error') || m.includes('failed to fetch');
+}
 function friendlyError(msg) {
   const m = (msg || '').toLowerCase();
+  if (isNetworkErr(m)) return 'El servidor tardó demasiado (ajustes de correo). Reintentamos automáticamente; si persiste, espera 1 minuto.';
   if (m.includes('already registered')) return 'Este correo ya tiene cuenta. Inicia sesión.';
   if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
   if (m.includes('email not confirmed')) return 'Verifica tu correo con el código de 6 dígitos.';
@@ -44,25 +49,28 @@ function friendlyError(msg) {
   if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
   return msg || 'Error inesperado. Intenta de nuevo.';
 }
+const wait = ms => new Promise(r => setTimeout(r, ms));
 
 // ===== LOGIN =====
 async function handleLogin(e) {
   e.preventDefault();
   setBtnLoading('btnLogin', true); showAuthMessage('', '');
   try {
-    const { data, error } = await db.auth.signInWithPassword({
+    let res = await db.auth.signInWithPassword({
       email: document.getElementById('loginEmail').value.trim().toLowerCase(),
       password: document.getElementById('loginPassword').value
     });
-    if (error) throw error;
-    if (!data.user) throw new Error('Sin usuario');
+    if (res.error && isNetworkErr(res.error.message)) { await wait(1500); res = await db.auth.signInWithPassword({
+      email: document.getElementById('loginEmail').value.trim().toLowerCase(),
+      password: document.getElementById('loginPassword').value }); }
+    if (res.error) throw res.error;
     location.replace('app.html');
   } catch (err) {
     showAuthMessage('❌ ' + friendlyError(err.message), 'error');
   } finally { setBtnLoading('btnLogin', false); }
 }
 
-// ===== REGISTRO =====
+// ===== REGISTRO (con reintento automático anti-504) =====
 async function handleRegister(e) {
   e.preventDefault();
   const age = parseInt(document.getElementById('regAge').value, 10);
@@ -85,14 +93,13 @@ async function handleRegister(e) {
     specialty: document.getElementById('regSpecialty')?.value || '',
     rate: document.getElementById('regRate')?.value || ''
   };
+  const payload = { email, password, options: { data: meta, emailRedirectTo: location.origin + '/index.html' } };
   try {
-    const { data, error } = await db.auth.signUp({
-      email, password,
-      options: { data: meta, emailRedirectTo: location.origin + '/index.html' }
-    });
-    if (error) throw error;
+    let res = await db.auth.signUp(payload);
+    if (res.error && isNetworkErr(res.error.message)) { await wait(2000); res = await db.auth.signUp(payload); }
+    if (res.error) throw res.error;
     localStorage.setItem('fendyx_pending_meta', JSON.stringify(meta));
-    if (data.session) { location.replace('app.html'); return; }
+    if (res.data.session) { location.replace('app.html'); return; }
     pendingSignup = { email, password };
     document.getElementById('verifyEmailLabel').textContent = email;
     document.getElementById('verifyCode').value = '';
@@ -103,7 +110,7 @@ async function handleRegister(e) {
   } finally { setBtnLoading('btnRegister', false); }
 }
 
-// ===== VERIFICACIÓN DE CORREO (CÓDIGO 6 DÍGITOS) =====
+// ===== VERIFICACIÓN DE CORREO =====
 async function confirmSignupCode() {
   const code = document.getElementById('verifyCode').value.trim();
   if (!pendingSignup) { showToast('Primero crea tu cuenta'); return; }
@@ -130,8 +137,9 @@ function openRecover() {
 async function recoverSendCode() {
   const email = document.getElementById('recoverEmail').value.trim().toLowerCase();
   if (!email) { showToast('Escribe tu correo'); return; }
-  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
-  if (error) { showToast('❌ ' + friendlyError(error.message)); return; }
+  let res = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+  if (res.error && isNetworkErr(res.error.message)) { await wait(2000); res = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin }); }
+  if (res.error) { showToast('❌ ' + friendlyError(res.error.message)); return; }
   pendingRecoverEmail = email;
   document.getElementById('recoverStep1').classList.add('hidden');
   document.getElementById('recoverStep2').classList.remove('hidden');
@@ -158,7 +166,6 @@ async function recoverSavePass() {
   switchAuthTab('login');
 }
 
-// Aviso de cuenta baneada
 if (location.search.includes('banned=1')) {
   document.addEventListener('DOMContentLoaded', () => showAuthMessage('🚫 Cuenta suspendida por el administrador', 'error'));
 }

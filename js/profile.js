@@ -1,8 +1,8 @@
 'use strict';
-let viewedUserId = null, kycApi = null;
+let viewedUserId = null;
 const INTERESTS = ['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
 const PREFERENCES = ['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
-const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
 const _pe = { interests: new Set(), preferences: new Set(), zodiac: null };
 
 function toggleChip(el, group, value) {
@@ -124,12 +124,15 @@ async function callFromProfile(id, rate) {
   startCall(id, rate);
 }
 async function messageFromProfile() { if (viewedUserId) { await loadScript('chat.js'); startChatWith(viewedUserId); } }
-function joinKycRoom() {
-  const room = 'FENDYX_KYC_' + currentUser.id.slice(0, 8);
+
+// ===== KYC POR VIDEOLLAMADA INTEGRADA =====
+async function joinKycRoom() {
+  await loadScript('calls.js');
   document.getElementById('kycTitle').textContent = '🎥 Verificación KYC en curso';
   document.getElementById('kycVerifyBtn').classList.add('hidden');
-  openModal('modal-kyc');
-  kycApi = new JitsiMeetExternalAPI('meet.jit.si', { roomName: room, width: '100%', height: '100%', parentNode: document.getElementById('kycContainer'), userInfo: { displayName: currentProfile.full_name } });
-  showToast('🎥 Conectado a la sala KYC. El admin se unirá.');
+  await joinWebCall('FENDYX_KYC_' + currentUser.id.slice(0, 8), { rate: 0, rowId: null, asClient: false });
 }
-function closeKyc() { try { if (kycApi) { kycApi.dispose(); kycApi = null; } } catch (e) {} closeModal('modal-kyc'); }
+function closeKyc() {
+  if (typeof callRoom !== 'undefined' && callRoom) { endWebCall(); }
+  else { closeModal('modal-kyc'); }
+}

@@ -10,57 +10,57 @@ async function loadGirls() {
       <div class="card-title">${w.full_name}${w.age ? ', ' + w.age : ''} ${w.zodiac || ''}</div>
       <span class="status-pill ${w.is_online ? 'online' : 'offline'}">${w.is_online ? 'EN LÍNEA' : 'DESCONECTADA'}</span>
       <span class="role-badge">${lv.name} · ◈ ${rd?.rate_per_minute || lv.rate}/min</span>
-      <div class="card-desc">${w.occupation || ''} ${w.occupation && w.bio ? '·' : ''} ${w.bio || ''}</div>
-      <div class="chips-row" style="margin:6px 0">${(w.interests || []).slice(0,3).map(i => `<span class="chip">🎯 ${i}</span>`).join('')}</div>
+      <div class="card-desc">${w.occupation || ''} ${w.bio || ''}</div>
       <div class="row-actions">
         <button class="btn-small success" onclick="startCall('${w.id}',${rd?.rate_per_minute || lv.rate})" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button>
         <button class="btn-small" onclick="openProfile('${w.id}')">👤 Perfil</button>
       </div></div>`;
-  }).join('') || '<p class="empty-state">Aún no hay chicas verificadas en línea</p>';
+  }).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
 }
 
 async function loadWorkers() {
   const isWorker = currentProfile.role === 'remote_worker';
-  document.getElementById('workerPanel').classList.toggle('hidden', !isWorker);
+  const grid = document.getElementById('workersGrid');
+  const panel = document.getElementById('workerPanel');
   if (isWorker) {
+    // VISTA LIMPIA: solo ella, sin otras trabajadoras
+    grid.style.display = 'none'; grid.innerHTML = '';
+    panel.classList.remove('hidden');
     const lv = levelInfo(roleDetails?.worker_level);
     document.getElementById('workerSpecialty').value = roleDetails?.specialty || '';
     document.getElementById('workerBio').value = currentProfile.bio || roleDetails?.bio || '';
     document.getElementById('workerOnline').checked = !!currentProfile.is_online;
     const info = document.getElementById('workerLevelInfo');
-    if (info) info.innerHTML = `Tu nivel: <b>${lv.name}</b> · Tarifa: <b>◈ ${roleDetails?.rate_per_minute || lv.rate}/min</b> (la asigna el admin) · KYC: <b>${currentProfile.kyc_status}</b>`;
+    if (info) info.innerHTML = `Tu nivel: <b>${lv.name}</b> · Tarifa: <b>◈ ${roleDetails?.rate_per_minute || lv.rate}/min</b> · KYC: <b>${currentProfile.kyc_status}</b><br>${currentProfile.is_online ? '🟢 Estás EN LÍNEA: puedes recibir llamadas' : '🔴 Estás DESCONECTADA: no recibes llamadas'}`;
     loadMyCalls();
+    return;
   }
+  grid.style.display = '';
+  panel.classList.add('hidden');
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').neq('id', currentUser.id);
-  document.getElementById('workersGrid').innerHTML = (data || []).map(w => {
+  grid.innerHTML = (data || []).map(w => {
     const rd = w.role_details?.[0], lv = levelInfo(rd?.worker_level);
     return `<div class="card-item"><div class="card-title">${w.full_name}</div>
       <span class="status-pill ${w.is_online ? 'online' : 'offline'}">${w.is_online ? 'EN LÍNEA' : 'DESCONECTADO'}</span>
-      <div class="card-desc">${rd?.specialty || ''} · ${stars(w.rating)}</div>
       <div class="price-tag">◈ ${rd?.rate_per_minute || lv.rate}/min</div><br>
       <button class="btn-small success" onclick="startCall('${w.id}',${rd?.rate_per_minute || lv.rate})" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button></div>`;
-  }).join('') || '<p class="empty-state">Sin trabajadores remotos aún</p>';
+  }).join('') || '<p class="empty-state">Sin trabajadores</p>';
 }
 
 async function saveWorkerProfile(e) {
   e.preventDefault();
-  await db.from('role_details').upsert({
-    user_id: currentUser.id, role_type: 'remote_worker',
-    specialty: document.getElementById('workerSpecialty').value,
-    bio: document.getElementById('workerBio').value
-  }, { onConflict: 'user_id' });
+  await db.from('role_details').upsert({ user_id: currentUser.id, role_type: 'remote_worker', specialty: document.getElementById('workerSpecialty').value, bio: document.getElementById('workerBio').value }, { onConflict: 'user_id' });
   await db.from('profiles').update({ bio: document.getElementById('workerBio').value, is_online: document.getElementById('workerOnline').checked }).eq('id', currentUser.id);
-  showToast('✅ Perfil profesional guardado');
-  await loadProfile(); loadWorkers();
+  currentProfile.is_online = document.getElementById('workerOnline').checked;
+  showToast(currentProfile.is_online ? '🟢 En línea: recibiendo llamadas' : '🔴 Desconectada');
+  loadWorkers();
 }
 
 function fillKycForm() {
   const p = currentProfile;
   const box = document.getElementById('kycStatusBox');
-  const st = { none: '⚪ No aplica', pending: '⏳ Pendiente de revisión por el admin', approved: '✅ Verificada: ya puedes recibir llamadas', rejected: '❌ Rechazada: ' + (p.kyc_note || 'revisa tus fotos') }[p.kyc_status] || '⚪';
-  box.innerHTML = `<h3>Estado de verificación</h3><p>${st}</p>
-    ${p.id_card_url ? `<img class="kyc-img" src="${p.id_card_url}">` : ''}${p.face_photo_url ? `<img class="kyc-img" src="${p.face_photo_url}">` : ''}
-    <p class="dim">WhatsApp registrado: ${p.whatsapp || '—'}</p>`;
+  const st = { none: '⚪ No aplica', pending: '⏳ Pendiente', approved: '✅ Verificada', rejected: '❌ Rechazada: ' + (p.kyc_note || '') }[p.kyc_status] || '⚪';
+  box.innerHTML = `<h3>Verificación</h3><p>${st}</p>${p.id_card_url ? `<img class="kyc-img" src="${p.id_card_url}">` : ''}${p.face_photo_url ? `<img class="kyc-img" src="${p.face_photo_url}">` : ''}`;
   document.getElementById('kycWhatsapp').value = p.whatsapp || '';
 }
 async function submitKycDocs(e) {
@@ -71,8 +71,7 @@ async function submitKycDocs(e) {
   if (idf) { const p1 = 'kyc/' + currentUser.id + '_id_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p1, idf); if (!r.error) up.id_card_url = db.storage.from('fendyx-assets').getPublicUrl(p1).data.publicUrl; }
   if (fcf) { const p2 = 'kyc/' + currentUser.id + '_face_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p2, fcf); if (!r.error) up.face_photo_url = db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl; }
   await db.from('profiles').update(up).eq('id', currentUser.id);
-  await loadProfile(); fillKycForm();
-  showToast('📨 Documentos enviados. El admin los revisará.');
+  await loadProfile(); fillKycForm(); showToast('📨 Enviado');
 }
 
 async function loadMyCalls() {
@@ -86,12 +85,13 @@ async function loadMyCalls() {
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
   rate = parseFloat(rate) || 0.2;
-  if (!currentProfile.unlimited_tokens && parseFloat(currentProfile.tokens_balance) < rate) { showToast('❌ Saldo insuficiente para 1 minuto'); return; }
+  // BLOQUEO: solo se puede llamar si la trabajadora está EN LÍNEA
+  const { data: wk } = await db.from('profiles').select('is_online, kyc_status').eq('id', workerId).single();
+  if (!wk || wk.kyc_status !== 'approved') { showToast('❌ Trabajadora no verificada'); return; }
+  if (!wk.is_online) { showToast('❌ La trabajadora NO está en línea ahora'); return; }
+  if (!currentProfile.unlimited_tokens && parseFloat(currentProfile.tokens_balance) < rate) { showToast('❌ Saldo insuficiente'); return; }
   const roomId = 'FENDYX' + Date.now();
-  const { data: call } = await db.from('video_calls').insert({
-    worker_id: workerId, client_id: currentUser.id, room_id: roomId,
-    rate_per_minute: rate, status: 'active', started_at: new Date().toISOString()
-  }).select().single();
+  const { data: call } = await db.from('video_calls').insert({ worker_id: workerId, client_id: currentUser.id, room_id: roomId, rate_per_minute: rate, status: 'active', started_at: new Date().toISOString() }).select().single();
   await loadScript('calls.js');
   await startWebCall(roomId, { rate, rowId: call.id, asClient: true });
 }

@@ -44,8 +44,8 @@ function fillProfilePro() {
     <div id="proGalleryPrev" class="gallery-grid">${(p.gallery_urls || []).slice(0,5).map(u => `<img src="${u}">`).join('')}</div>
     <input type="text" id="proName" placeholder="Nombre" value="${p.full_name || ''}">
     <input type="number" id="proAge" placeholder="Edad" min="18" max="100" value="${p.age || ''}">
-    <input type="text" id="proOccupation" placeholder="Ocupación (se escribe)" value="${p.occupation || ''}">
-    <textarea id="proBio" placeholder="Descripción (se escribe)" rows="3">${p.bio || ''}</textarea>
+    <input type="text" id="proOccupation" placeholder="Ocupación" value="${p.occupation || ''}">
+    <textarea id="proBio" placeholder="Descripción" rows="3">${p.bio || ''}</textarea>
     <label class="dim">🎯 Intereses (seleccionables)</label>
     <div class="chips-row">${INTERESTS.map(i => `<span class="chip ${_pe.interests.has(i) ? 'active' : ''}" onclick="toggleChip(this,'interests','${i}')">${i}</span>`).join('')}</div>
     <label class="dim">💫 Preferencias (seleccionables)</label>
@@ -125,7 +125,6 @@ async function callFromProfile(id, rate) {
 }
 async function messageFromProfile() { if (viewedUserId) { await loadScript('chat.js'); startChatWith(viewedUserId); } }
 
-// ===== KYC POR VIDEOLLAMADA INTEGRADA =====
 async function joinKycRoom() {
   await loadScript('calls.js');
   document.getElementById('kycTitle').textContent = '🎥 Verificación KYC en curso';

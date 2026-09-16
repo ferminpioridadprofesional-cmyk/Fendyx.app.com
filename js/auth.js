@@ -20,10 +20,12 @@ function showRoleFields() {
     restaurant: [['regRIF','RIF del negocio'],['regBusinessName','Nombre del local'],['regAddress','Dirección']],
     delivery: [['regLicense','Número de licencia'],['regPlate','Placa'],['regVehicleType','']],
     nightclub: [['regClubName','Nombre del bar/discoteca'],['regClubAddress','Dirección']],
-    remote_worker: [['regSpecialty','Especialidad'],['regRate','Tarifa por minuto']]
+    remote_worker: [['regSpecialty','Especialidad (ej: compañía, conversación, idiomas)'],['regBio','Cuéntanos sobre ti']]
   }[role] || [];
   c.innerHTML = f.map(x => x[0] === 'regVehicleType'
     ? `<div class="input-group"><select id="regVehicle"><option value="moto">🏍️ Moto</option><option value="bicicleta">🚲 Bicicleta</option><option value="carro">🚗 Carro</option></select></div>`
+    : x[0] === 'regBio'
+    ? `<div class="input-group"><textarea id="regBio" placeholder="${x[1]}" rows="3"></textarea></div>`
     : `<div class="input-group"><input type="text" id="${x[0]}" placeholder="${x[1]}"></div>`).join('');
 }
 function showAuthMessage(msg, type) {
@@ -40,18 +42,18 @@ function isNetworkErr(msg) {
 }
 function friendlyError(msg) {
   const m = (msg || '').toLowerCase();
-  if (isNetworkErr(m)) return 'El servidor tardó demasiado (ajustes de correo). Reintentamos automáticamente; si persiste, espera 1 minuto.';
+  if (isNetworkErr(m)) return 'El servidor tardó demasiado. Reintentamos automáticamente; si persiste, espera 1 minuto.';
   if (m.includes('already registered')) return 'Este correo ya tiene cuenta. Inicia sesión.';
   if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
   if (m.includes('email not confirmed')) return 'Verifica tu correo con el código de 6 dígitos.';
   if (m.includes('rate limit') || m.includes('once every')) return 'Espera 60 segundos entre envíos de código.';
   if (m.includes('invalid otp') || m.includes('expired') || m.includes('token')) return 'Código incorrecto o expirado. Pide uno nuevo.';
   if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
+  if (m.includes('solo mujeres')) return 'Solo mujeres pueden registrarse como trabajadoras remotas.';
   return msg || 'Error inesperado. Intenta de nuevo.';
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
-// ===== LOGIN =====
 async function handleLogin(e) {
   e.preventDefault();
   setBtnLoading('btnLogin', true); showAuthMessage('', '');
@@ -70,18 +72,28 @@ async function handleLogin(e) {
   } finally { setBtnLoading('btnLogin', false); }
 }
 
-// ===== REGISTRO (con reintento automático anti-504) =====
 async function handleRegister(e) {
   e.preventDefault();
   const age = parseInt(document.getElementById('regAge').value, 10);
   const role = document.getElementById('regRole').value;
+  const gender = document.getElementById('regGender').value;
   const email = document.getElementById('regEmail').value.trim().toLowerCase();
   const password = document.getElementById('regPassword').value;
+  
   if (!age || age < 18) { showAuthMessage('Debes ser mayor de 18 años.', 'error'); return; }
   if (!role) { showAuthMessage('Selecciona un tipo de cuenta.', 'error'); return; }
+  if (!gender) { showAuthMessage('Selecciona tu género.', 'error'); return; }
+  
+  // Validación: solo mujeres pueden ser remote_worker
+  if (role === 'remote_worker' && gender !== 'female') {
+    showAuthMessage('❌ Solo mujeres pueden registrarse como trabajadoras remotas.', 'error');
+    return;
+  }
+  
   setBtnLoading('btnRegister', true); showAuthMessage('', '');
   const meta = {
-    full_name: document.getElementById('regName').value.trim(), age, role,
+    full_name: document.getElementById('regName').value.trim(),
+    age, role, gender,
     rif: document.getElementById('regRIF')?.value || '',
     business_name: document.getElementById('regBusinessName')?.value || '',
     address: document.getElementById('regAddress')?.value || '',
@@ -91,8 +103,10 @@ async function handleRegister(e) {
     club_name: document.getElementById('regClubName')?.value || '',
     club_address: document.getElementById('regClubAddress')?.value || '',
     specialty: document.getElementById('regSpecialty')?.value || '',
-    rate: document.getElementById('regRate')?.value || ''
+    bio: document.getElementById('regBio')?.value || '',
+    rate: role === 'remote_worker' ? '0.5' : '1'
   };
+  
   const payload = { email, password, options: { data: meta, emailRedirectTo: location.origin + '/index.html' } };
   try {
     let res = await db.auth.signUp(payload);
@@ -110,7 +124,6 @@ async function handleRegister(e) {
   } finally { setBtnLoading('btnRegister', false); }
 }
 
-// ===== VERIFICACIÓN DE CORREO =====
 async function confirmSignupCode() {
   const code = document.getElementById('verifyCode').value.trim();
   if (!pendingSignup) { showToast('Primero crea tu cuenta'); return; }
@@ -127,7 +140,6 @@ async function resendSignupCode() {
   showToast(error ? '❌ ' + friendlyError(error.message) : '📧 Código reenviado');
 }
 
-// ===== RECUPERAR CONTRASEÑA (3 PASOS) =====
 function openRecover() {
   document.getElementById('recoverStep1').classList.remove('hidden');
   document.getElementById('recoverStep2').classList.add('hidden');

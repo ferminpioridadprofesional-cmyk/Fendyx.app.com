@@ -13,6 +13,7 @@ const WORKER_LEVELS = [
 function levelInfo(n) { return WORKER_LEVELS.find(l => l.n === parseInt(n)) || WORKER_LEVELS[0]; }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initPWA();
   await loadBranding();
   const isApp = !!document.getElementById('section-dashboard');
   const { data: { session } } = await db.auth.getSession();
@@ -22,6 +23,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     await enterApp();
   } else if (session) { location.replace('app.html'); }
 });
+
+// ===== PWA: instalable + offline (base para Play Store / App Store) =====
+function initPWA() {
+  if (!document.querySelector('link[rel="manifest"]')) {
+    const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.json'; document.head.appendChild(l);
+    const m = document.createElement('meta'); m.name = 'theme-color'; m.content = '#00d9ff'; document.head.appendChild(m);
+    const a = document.createElement('link'); a.rel = 'apple-touch-icon'; a.href = 'icons/icon.svg'; document.head.appendChild(a);
+    const t = document.createElement('meta'); t.name = 'mobile-web-app-capable'; t.content = 'yes'; document.head.appendChild(t);
+  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 
 async function enterApp() {
   try {
@@ -94,13 +106,20 @@ function injectDynamicUI() {
     .activation-banner{position:fixed;top:62px;left:0;right:0;z-index:115;background:linear-gradient(100deg,rgba(255,176,32,.96),rgba(255,59,107,.92));color:#04060c;padding:10px 16px;font-weight:700;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center}
     body.has-banner .app-main{padding-top:130px}
     .kyc-img{width:120px;height:85px;object-fit:cover;border-radius:10px;border:1px solid var(--border-strong);margin:4px;cursor:pointer}
-    .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}`;
+    .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}
+    .panic-fab{position:fixed;right:20px;bottom:170px;z-index:160;width:56px;height:56px;border-radius:50%;border:2px solid #ff3b6b;background:rgba(255,59,107,.18);color:#ff3b6b;font-size:1.4rem;cursor:pointer;backdrop-filter:blur(8px);animation:pulse 2.5s infinite}`;
   document.head.appendChild(st);
 
   const banner = document.createElement('div');
   banner.id = 'activationBanner'; banner.className = 'activation-banner hidden';
-  banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3) y espera verificación del admin. <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
+  banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3) y espera verificación. <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
   document.querySelector('.app-header').after(banner);
+
+  const panic = document.createElement('button');
+  panic.id = 'panicBtn'; panic.className = 'panic-fab'; panic.textContent = '🆘';
+  panic.title = 'Botón de pánico: envía tu ubicación al admin';
+  panic.onclick = () => sendPanic('general');
+  document.body.appendChild(panic);
 
   const girls = document.createElement('section');
   girls.id = 'section-girls'; girls.className = 'app-section';
@@ -123,11 +142,10 @@ function injectDynamicUI() {
     </form>`;
   document.querySelector('.app-main').appendChild(kyc);
 
-  // MODAL DE RECARGA = SOLICITUD VERIFICADA (nunca auto-recarga)
   const mc = document.querySelector('#modal-recharge .modal-content');
   if (mc) mc.innerHTML = `
     <div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div>
-    <p class="dim">El pago lo verifica el administrador (o el bot Binance al activarse). Mínimo 3 tokens ($3). Envía el monto exacto y carga la captura.</p>
+    <p class="dim">El pago lo verifica el administrador (o el bot Binance al activarse). Mínimo 3 tokens ($3).</p>
     <div class="owner-form">
       <input type="number" id="reqAmount" placeholder="Monto a recargar (mín 3)" min="3">
       <select id="reqMethod">
@@ -157,9 +175,32 @@ function injectDynamicUI() {
     tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-recharges-tab onclick="switchAdminTab('recharges',this)">💳 Recargas</button>`);
     const panel2 = document.createElement('div');
     panel2.id = 'admin-recharges'; panel2.className = 'admin-panel';
-    panel2.innerHTML = `<p class="dim">Verifica que el monto exacto llegó a tu cuenta/billetera antes de aprobar.</p><div id="rechargeRequestsList" class="list-compact"></div>`;
+    panel2.innerHTML = `<p class="dim">Verifica que el monto exacto llegó antes de aprobar.</p><div id="rechargeRequestsList" class="list-compact"></div>`;
     document.getElementById('section-admin').appendChild(panel2);
   }
+  if (tabs && !tabs.querySelector('[data-safety-tab]')) {
+    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-safety-tab onclick="switchAdminTab('safety',this)">🚨 Seguridad</button>`);
+    const panel3 = document.createElement('div');
+    panel3.id = 'admin-safety'; panel3.className = 'admin-panel';
+    panel3.innerHTML = `<h3 class="sub-title">🆘 Alertas de pánico</h3><div id="panicList" class="list-compact"></div>
+      <h3 class="sub-title">🚩 Reportes y auto-moderación</h3><div id="reportsList" class="list-compact"></div>`;
+    document.getElementById('section-admin').appendChild(panel3);
+  }
+}
+
+// ===== SEGURIDAD: PÁNICO Y REPORTES =====
+async function sendPanic(context, callId) {
+  const pos = await getPos();
+  await db.from('panic_alerts').insert({
+    user_id: currentUser.id, context: context || 'general', call_id: callId || null,
+    latitude: pos?.lat || null, longitude: pos?.lng || null
+  });
+  navigator.vibrate?.([400, 150, 400]);
+  showToast('🆘 Alerta enviada al admin con tu ubicación en vivo');
+}
+async function reportUser(targetId, reason) {
+  await db.from('reports').insert({ reporter_id: currentUser.id, target_user_id: targetId, type: 'user', detail: reason });
+  showToast('🚩 Reporte enviado. Moderación lo revisará.');
 }
 
 function requireActive() {
@@ -284,6 +325,12 @@ function startRealtime() {
   if (liveChannel) return;
   liveChannel = db.channel('fendyx-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, p => {
+      if (currentProfile.role === 'admin') {
+        showToast('🆘 ¡ALERTA DE PÁNICO! Revisa Panel Admin → Seguridad');
+        navigator.vibrate?.([300, 100, 300]);
+      }
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
       if (document.getElementById('section-orders')?.classList.contains('active')) loadOrders?.();
       if (document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub?.();

@@ -24,7 +24,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (session) { location.replace('app.html'); }
 });
 
-// ===== PWA: instalable + offline (base para Play Store / App Store) =====
 function initPWA() {
   if (!document.querySelector('link[rel="manifest"]')) {
     const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.json'; document.head.appendChild(l);
@@ -48,7 +47,10 @@ async function enterApp() {
     }
     injectDynamicUI();
     await ensureRoleDetails();
-    updateHeader(); loadModules(); showSection('dashboard'); startRealtime();
+    updateHeader(); loadModules();
+    const last = sessionStorage.getItem('fendyx_last_section');
+    showSection(LOADERS[last] || last === 'dashboard' ? (last || 'dashboard') : 'dashboard');
+    startRealtime();
   } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
 }
 
@@ -188,7 +190,6 @@ function injectDynamicUI() {
   }
 }
 
-// ===== SEGURIDAD: PÁNICO Y REPORTES =====
 async function sendPanic(context, callId) {
   const pos = await getPos();
   await db.from('panic_alerts').insert({
@@ -231,7 +232,7 @@ function toggleUserMenu() { document.getElementById('userMenu').classList.toggle
 document.addEventListener('click', e => {
   if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden');
 });
-async function handleLogout() { await db.auth.signOut(); location.replace('index.html'); }
+async function handleLogout() { sessionStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
 function loadModules() {
   const mods = [
@@ -260,7 +261,8 @@ function loadModules() {
 const MODULE_FILES = {
   map: 'map.js', radar: 'radar.js', events: 'radar.js', restaurants: 'restaurants.js', reservations: 'restaurants.js',
   orders: 'orders.js', delivery: 'delivery.js', remote: 'remote.js', girls: 'remote.js', kyc: 'remote.js', agenda: 'remote.js',
-  marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js'
+  marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js',
+  calls: 'calls.js'
 };
 const LOADERS = {
   map: () => { initMap(); autoLocate(); loadMapUsers(); },
@@ -284,6 +286,7 @@ async function showSection(name) {
   document.querySelectorAll('.app-section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + name)?.classList.add('active');
   document.getElementById('userMenu')?.classList.add('hidden');
+  sessionStorage.setItem('fendyx_last_section', name);
   const navMap = { dashboard: 0, map: 1, radar: 2, chat: 3, tokens: 4 };
   document.querySelectorAll('.bottom-nav .nav-item').forEach((n, i) => n.classList.toggle('active', i === navMap[name]));
   if (MODULE_FILES[name]) await loadScript(MODULE_FILES[name]);
@@ -325,10 +328,30 @@ function startRealtime() {
   if (liveChannel) return;
   liveChannel = db.channel('fendyx-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, p => {
-      if (currentProfile.role === 'admin') {
-        showToast('🆘 ¡ALERTA DE PÁNICO! Revisa Panel Admin → Seguridad');
-        navigator.vibrate?.([300, 100, 300]);
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => {
+      if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO! Revisa Panel Admin → Seguridad'); navigator.vibrate?.([300, 100, 300]); }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => {
+      if (p.new.id === currentUser.id) { loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); }); }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharge_requests' }, p => {
+      if (p.new.user_id === currentUser.id) {
+        showToast(p.new.status === 'approved' ? '✅ Tu recarga fue aprobada' : p.new.status === 'rejected' ? '❌ Recarga rechazada: ' + (p.new.note || '') : '');
+        if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.();
+        updateHeader();
+      }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+      if (document.getElementById('section-agenda')?.classList.contains('active')) loadAgenda?.();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, p => {
+      if (p.new.worker_id === currentUser.id && p.new.status === 'active') {
+        loadScript('calls.js').then(() => showIncomingCall(p.new));
+      }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, p => {
+      if (p.new.status === 'ended' && (p.new.worker_id === currentUser.id || p.new.client_id === currentUser.id)) {
+        loadScript('calls.js').then(() => remoteHungUp(p.new));
       }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {

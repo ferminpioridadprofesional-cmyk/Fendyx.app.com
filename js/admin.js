@@ -10,7 +10,7 @@ function switchAdminTab(tab, btn) {
   btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('admin-' + tab)?.classList.add('active');
-  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin };
+  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests };
   loaders[tab]?.();
 }
 async function loadAdminOverview() {
@@ -43,7 +43,7 @@ async function saveAppName() {
   await loadBranding(); showToast('✅ Nombre actualizado: ' + name);
 }
 
-// ===== USUARIOS + SOPORTE DE CONTRASEÑAS =====
+// ===== USUARIOS: ROL, PASS, BAN, VERIFY =====
 async function loadAdminUsers() {
   if (!document.getElementById('adminPassLog')) {
     document.getElementById('admin-users').insertAdjacentHTML('beforeend',
@@ -58,37 +58,53 @@ function renderAdminUsers() {
   const q = (document.getElementById('adminUsersSearch').value || '').toLowerCase();
   const rows = adminUsersCache.filter(u => !q || (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q));
   document.getElementById('adminUsersTable').innerHTML = rows.map(u =>
-    `<tr><td><b>${u.full_name || '—'}</b><br><small class="dim">${u.email}</small></td><td>${ROLE_LABELS[u.role] || u.role}</td><td>${u.unlimited_tokens ? '∞' : u.tokens_balance}</td>
+    `<tr><td><b>${u.full_name || '—'}</b><br><small class="dim">${u.email}</small></td>
+     <td><select class="btn-small" onchange="changeUserRole('${u.id}', this.value)" ${u.role === 'admin' ? 'disabled' : ''}>
+        ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}
+     </select></td>
+     <td>${u.unlimited_tokens ? '∞' : u.tokens_balance}</td>
      <td>${u.is_banned ? '🚫 ' + (u.ban_reason || 'Baneado') : u.is_verified ? '✅ Verificado' : '⏳ Pendiente'}</td>
      <td>
-       <button class="btn-small" onclick="changeUserPass('${u.email}')">🔑 Cambiar pass</button>
-       <button class="btn-small warn" onclick="tempPass('${u.email}')">🎲 Temporal</button>
+       <button class="btn-small" onclick="changeUserPass('${u.email}')">🔑 Pass</button>
+       <button class="btn-small warn" onclick="tempPass('${u.email}')">🎲</button>
        ${!u.is_verified ? `<button class="btn-small success" onclick="verifyUser('${u.id}')">Verificar</button>` : ''}
        ${u.role !== 'admin' ? (u.is_banned ? `<button class="btn-small success" onclick="toggleBan('${u.id}',false)">Desbanear</button>` : `<button class="btn-small danger" onclick="toggleBan('${u.id}',true)">Banear</button>`) : ''}
      </td></tr>`).join('');
+}
+async function changeUserRole(id, newRole) {
+  const u = adminUsersCache.find(x => x.id === id);
+  if (!u || u.role === newRole) return;
+  if (u.role === 'admin') { showToast('❌ No puedes cambiar el rol del admin'); loadAdminUsers(); return; }
+  if (newRole === 'remote_worker' && u.gender !== 'female') { showToast('❌ Solo mujeres pueden ser trabajadoras remotas'); loadAdminUsers(); return; }
+  await db.from('profiles').update({ role: newRole, kyc_status: newRole === 'remote_worker' ? 'pending' : 'none' }).eq('id', id);
+  const payload = { user_id: id, role_type: newRole };
+  if (newRole === 'remote_worker') Object.assign(payload, { rate_per_minute: 0.2, worker_level: 1 });
+  await db.from('role_details').upsert(payload, { onConflict: 'user_id' });
+  await db.rpc('log_admin_action', { p_action: 'role_change', p_target: u.email, p_detail: u.role + ' → ' + newRole });
+  showToast('✅ Rol cambiado a ' + (ROLE_LABELS[newRole] || newRole));
+  loadAdminUsers();
 }
 async function changeUserPass(email) {
   const np = prompt('Nueva contraseña para ' + email + ' (mínimo 6 caracteres):');
   if (np === null) return;
   if (np.length < 6) { showToast('❌ Mínimo 6 caracteres'); return; }
   const np2 = prompt('Confirma la nueva contraseña:');
-  if (np !== np2) { showToast('❌ Las contraseñas no coinciden'); return; }
+  if (np !== np2) { showToast('❌ No coinciden'); return; }
   const { data: res, error } = await db.rpc('admin_reset_password', { p_email: email, p_new: np });
   if (error || (res && res.startsWith('ERROR'))) { showToast('❌ ' + (res || error.message)); return; }
-  showToast('✅ Contraseña de ' + email + ' cambiada. Avísale por WhatsApp.');
+  showToast('✅ Contraseña cambiada. Avísale por WhatsApp.');
   loadPassLog();
 }
 async function tempPass(email) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let tmp = '';
   for (let i = 0; i < 8; i++) tmp += chars[Math.floor(Math.random() * chars.length)];
-  if (!confirm('Se generará la contraseña temporal: ' + tmp + '\n\nSe mostrará UNA sola vez. Envíala por WhatsApp al usuario verificado. ¿Continuar?')) return;
+  if (!confirm('Contraseña temporal generada: ' + tmp + '\nSe mostrará UNA sola vez. ¿Aplicar?')) return;
   const { data: res, error } = await db.rpc('admin_reset_password', { p_email: email, p_new: tmp });
   if (error || (res && res.startsWith('ERROR'))) { showToast('❌ ' + (res || error.message)); return; }
   navigator.clipboard?.writeText(tmp);
-  prompt('🔑 Contraseña temporal de ' + email + ' (copiada al portapapeles). Recomienda cambiarla al entrar:', tmp);
-  showToast('✅ Contraseña temporal aplicada y registrada');
-  loadPassLog();
+  prompt('🔑 Contraseña temporal de ' + email + ' (copiada al portapapeles):', tmp);
+  showToast('✅ Aplicada y registrada'); loadPassLog();
 }
 async function loadPassLog() {
   const box = document.getElementById('adminPassLog');
@@ -110,10 +126,47 @@ async function toggleBan(id, ban) {
   await db.from('profiles').update({ is_banned: ban, ban_reason: ban ? reason.trim() : null }).eq('id', id);
   const u = adminUsersCache.find(x => x.id === id);
   await db.rpc('log_admin_action', { p_action: ban ? 'ban' : 'unban', p_target: u?.email || id, p_detail: ban ? reason.trim() : 'Rehabilitado' });
-  showToast(ban ? '🚫 Baneado con razón registrada' : '✅ Desbaneado'); loadAdminUsers();
+  showToast(ban ? '🚫 Baneado con razón' : '✅ Desbaneado'); loadAdminUsers();
 }
 
-// ===== TOKENS / CONTENIDO / RETIROS / KYC / TRABAJADORAS / AUDITORÍA =====
+// ===== RECARGAS: VERIFICACIÓN MANUAL / BOT BINANCE =====
+async function loadRechargeRequests() {
+  const { data } = await db.from('recharge_requests').select('*, profiles(email, full_name)').order('created_at', { ascending: false });
+  const pend = (data || []).filter(r => r.status === 'pending');
+  const rest = (data || []).filter(r => r.status !== 'pending');
+  document.getElementById('rechargeRequestsList').innerHTML =
+    pend.map(r => `<div class="row-item"><div class="row-main"><b>${r.profiles?.full_name} · ◈ ${r.amount}</b>
+      <small>${r.profiles?.email} · ${r.method} · Ref: ${r.reference || '—'}</small>
+      ${r.proof_url ? `<img class="kyc-img" src="${r.proof_url}" onclick="window.open('${r.proof_url}')">` : '⚠️ sin captura'}</div>
+      <div class="row-actions"><button class="btn-small success" onclick="approveRecharge('${r.id}')">✅ Aprobar</button><button class="btn-small danger" onclick="rejectRecharge('${r.id}')">❌</button></div></div>`).join('')
+    + rest.slice(0, 10).map(r => `<div class="row-item"><div class="row-main"><b>${r.profiles?.full_name} · ◈ ${r.amount}</b><small>${new Date(r.created_at).toLocaleString('es')}</small></div>
+      <span class="order-status ${r.status === 'approved' ? 'st-delivered' : 'st-cancelled'}">${r.status === 'approved' ? 'Aprobada' : 'Rechazada'}</span></div>`).join('')
+    || '<p class="empty-state">Sin solicitudes de recarga</p>';
+}
+async function approveRecharge(id) {
+  const { data: r } = await db.from('recharge_requests').select('*, profiles(email, is_active)').eq('id', id).single();
+  if (!r || r.status !== 'pending') return;
+  if (!confirm('Confirma que recibiste ◈ ' + r.amount + ' (' + r.method + ', ref ' + (r.reference || '—') + ') de ' + r.profiles?.email + '. ¿Aprobar?')) return;
+  await db.rpc('credit_tokens', { p_to: r.user_id, p_amount: parseFloat(r.amount), p_desc: 'Recarga verificada (' + r.method + ')' });
+  const updates = { status: 'approved', verified_by: 'manual' };
+  await db.from('recharge_requests').update(updates).eq('id', id);
+  if (parseFloat(r.amount) >= 3 && !r.profiles?.is_active) {
+    await db.from('profiles').update({ is_active: true }).eq('id', r.user_id);
+    await db.rpc('claim_referral_reward', { p_referee: r.user_id });
+  }
+  await db.rpc('log_admin_action', { p_action: 'recharge_approve', p_target: r.profiles?.email || id, p_detail: '◈ ' + r.amount });
+  showToast('✅ Recarga aprobada y acreditada'); loadRechargeRequests(); loadAdminOverview();
+}
+async function rejectRecharge(id) {
+  const note = prompt('Razón del rechazo (la verá el usuario):');
+  if (note === null) return;
+  const { data: r } = await db.from('recharge_requests').select('*, profiles(email)').eq('id', id).single();
+  await db.from('recharge_requests').update({ status: 'rejected', note, verified_by: 'manual' }).eq('id', id);
+  await db.rpc('log_admin_action', { p_action: 'recharge_reject', p_target: r?.profiles?.email || id, p_detail: note || 'sin razón' });
+  showToast('❌ Solicitud rechazada'); loadRechargeRequests();
+}
+
+// ===== TOKENS / CONTENIDO / RETIROS =====
 async function adminAdjustTokens() {
   const email = document.getElementById('adminTokenEmail').value.trim().toLowerCase();
   const amount = parseFloat(document.getElementById('adminTokenAmount').value);
@@ -158,6 +211,8 @@ async function resolveWithdrawal(id, status) {
   await db.rpc('log_admin_action', { p_action: 'withdrawal_' + status, p_target: w.profiles?.email || id, p_detail: '◈ ' + w.amount });
   showToast(status === 'approved' ? '✅ Retiro aprobado' : '↩️ Rechazado y reembolsado'); loadAdminWithdrawals();
 }
+
+// ===== KYC =====
 async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u =>
@@ -166,7 +221,7 @@ async function loadKycList() {
      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}
      ${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : '⚠️ sin rostro'}</div>
      ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">💬 WhatsApp</a>` : ''}</div>
-     <div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅ Aprobar</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌ Rechazar</button></div></div>`).join('')
+     <div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅ Aprobar</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
     || '<p class="empty-state">Nadie pendiente de KYC 🎉</p>';
 }
 async function approveKyc(id) {
@@ -202,7 +257,7 @@ async function setWorkerLevel(id, level) {
   const { data: l } = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single();
   await db.from('role_details').update({ worker_level: l.level, rate_per_minute: l.rate }).eq('user_id', id);
   const u = (await db.from('profiles').select('email').eq('id', id).single()).data;
-  await db.rpc('log_admin_action', { p_action: 'level_change', p_target: u?.email || id, p_detail: 'Nivel ' + l.name + ' ($' + l.rate + '/min)' });
+  await db.rpc('log_admin_action', { p_action: 'level_change', p_target: u?.email || id, p_detail: 'Nivel ' + l.name });
   showToast('✅ Nivel ' + l.name + ' asignado'); loadWorkersAdmin();
 }
 async function setWorkerRate(id) {
@@ -211,10 +266,10 @@ async function setWorkerRate(id) {
   await db.from('role_details').update({ rate_per_minute: rate }).eq('user_id', id);
   const u = (await db.from('profiles').select('email').eq('id', id).single()).data;
   await db.rpc('log_admin_action', { p_action: 'rate_change', p_target: u?.email || id, p_detail: '◈ ' + rate + '/min' });
-  showToast('✅ Tarifa personalizada: ◈ ' + rate + '/min'); loadWorkersAdmin();
+  showToast('✅ Tarifa: ◈ ' + rate + '/min'); loadWorkersAdmin();
 }
 
-// ===== KYC POR VIDEOLLAMADA =====
+// ===== KYC VIDEOLLAMADA + AUDITORÍA =====
 function startKyc(userId, name) {
   kycTarget = userId;
   disposeKycApis();
@@ -231,8 +286,6 @@ async function kycMarkVerified() {
   showToast('✅ Verificada y activada'); kycTarget = null; closeKyc(); loadKycList();
 }
 function closeKyc() { disposeKycApis(); closeModal('modal-kyc'); }
-
-// ===== AUDITORÍA DE CHATS =====
 async function runAudit() {
   const q = document.getElementById('auditSearch').value.trim();
   const box = document.getElementById('auditResults');

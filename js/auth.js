@@ -2,6 +2,15 @@
 let pendingSignup = null;
 let pendingRecoverEmail = null;
 
+document.addEventListener('DOMContentLoaded', () => {
+  const ref = new URLSearchParams(location.search).get('ref');
+  if (ref) localStorage.setItem('fendyx_ref', ref);
+  if (location.search.includes('banned=1')) {
+    const reason = localStorage.getItem('fendyx_ban_reason') || 'Incumplimiento de normas';
+    showAuthMessage('🚫 Cuenta suspendida. Motivo: ' + reason, 'error');
+  }
+});
+
 function switchAuthTab(tab) {
   document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
   document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
@@ -20,13 +29,18 @@ function showRoleFields() {
     restaurant: [['regRIF','RIF del negocio'],['regBusinessName','Nombre del local'],['regAddress','Dirección']],
     delivery: [['regLicense','Número de licencia'],['regPlate','Placa'],['regVehicleType','']],
     nightclub: [['regClubName','Nombre del bar/discoteca'],['regClubAddress','Dirección']],
-    remote_worker: [['regSpecialty','Especialidad (ej: compañía, conversación, idiomas)'],['regBio','Cuéntanos sobre ti']]
+    remote_worker: [['regSpecialty','Especialidad (compañía, conversación, idiomas)'],['regBio','Cuéntanos sobre ti']]
   }[role] || [];
-  c.innerHTML = f.map(x => x[0] === 'regVehicleType'
+  let html = f.map(x => x[0] === 'regVehicleType'
     ? `<div class="input-group"><select id="regVehicle"><option value="moto">🏍️ Moto</option><option value="bicicleta">🚲 Bicicleta</option><option value="carro">🚗 Carro</option></select></div>`
     : x[0] === 'regBio'
     ? `<div class="input-group"><textarea id="regBio" placeholder="${x[1]}" rows="3"></textarea></div>`
     : `<div class="input-group"><input type="text" id="${x[0]}" placeholder="${x[1]}"></div>`).join('');
+  if (role === 'remote_worker') {
+    html += `<div class="owner-panel" style="margin:10px 0"><h3>🪪 Verificación obligatoria (+18)</h3>
+      <p class="dim" style="font-size:.85rem">Después de crear la cuenta deberás subir: foto de tu cédula, foto reciente de tu rostro (sin filtros ni gafas) y tu WhatsApp. El admin verificará manualmente antes de activarte.</p></div>`;
+  }
+  c.innerHTML = html;
 }
 function showAuthMessage(msg, type) {
   const el = document.getElementById('authMessage');
@@ -48,8 +62,8 @@ function friendlyError(msg) {
   if (m.includes('email not confirmed')) return 'Verifica tu correo con el código de 6 dígitos.';
   if (m.includes('rate limit') || m.includes('once every')) return 'Espera 60 segundos entre envíos de código.';
   if (m.includes('invalid otp') || m.includes('expired') || m.includes('token')) return 'Código incorrecto o expirado. Pide uno nuevo.';
-  if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
   if (m.includes('solo mujeres')) return 'Solo mujeres pueden registrarse como trabajadoras remotas.';
+  if (m.includes('password')) return 'Contraseña inválida (mínimo 6 caracteres).';
   return msg || 'Error inesperado. Intenta de nuevo.';
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -79,21 +93,16 @@ async function handleRegister(e) {
   const gender = document.getElementById('regGender').value;
   const email = document.getElementById('regEmail').value.trim().toLowerCase();
   const password = document.getElementById('regPassword').value;
-  
   if (!age || age < 18) { showAuthMessage('Debes ser mayor de 18 años.', 'error'); return; }
   if (!role) { showAuthMessage('Selecciona un tipo de cuenta.', 'error'); return; }
   if (!gender) { showAuthMessage('Selecciona tu género.', 'error'); return; }
-  
-  // Validación: solo mujeres pueden ser remote_worker
   if (role === 'remote_worker' && gender !== 'female') {
-    showAuthMessage('❌ Solo mujeres pueden registrarse como trabajadoras remotas.', 'error');
-    return;
+    showAuthMessage('❌ Solo mujeres pueden registrarse como trabajadoras remotas.', 'error'); return;
   }
-  
   setBtnLoading('btnRegister', true); showAuthMessage('', '');
   const meta = {
-    full_name: document.getElementById('regName').value.trim(),
-    age, role, gender,
+    full_name: document.getElementById('regName').value.trim(), age, role, gender,
+    referred_by: localStorage.getItem('fendyx_ref') || '',
     rif: document.getElementById('regRIF')?.value || '',
     business_name: document.getElementById('regBusinessName')?.value || '',
     address: document.getElementById('regAddress')?.value || '',
@@ -103,10 +112,8 @@ async function handleRegister(e) {
     club_name: document.getElementById('regClubName')?.value || '',
     club_address: document.getElementById('regClubAddress')?.value || '',
     specialty: document.getElementById('regSpecialty')?.value || '',
-    bio: document.getElementById('regBio')?.value || '',
-    rate: role === 'remote_worker' ? '0.5' : '1'
+    bio: document.getElementById('regBio')?.value || ''
   };
-  
   const payload = { email, password, options: { data: meta, emailRedirectTo: location.origin + '/index.html' } };
   try {
     let res = await db.auth.signUp(payload);
@@ -176,8 +183,4 @@ async function recoverSavePass() {
   closeModal('modal-recover');
   showAuthMessage('✅ Contraseña cambiada. Ya puedes iniciar sesión.', 'success');
   switchAuthTab('login');
-}
-
-if (location.search.includes('banned=1')) {
-  document.addEventListener('DOMContentLoaded', () => showAuthMessage('🚫 Cuenta suspendida por el administrador', 'error'));
 }

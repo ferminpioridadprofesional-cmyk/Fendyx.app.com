@@ -30,8 +30,14 @@ function initPWA() {
     const m = document.createElement('meta'); m.name = 'theme-color'; m.content = '#00d9ff'; document.head.appendChild(m);
     const a = document.createElement('link'); a.rel = 'apple-touch-icon'; a.href = 'icons/icon.svg'; document.head.appendChild(a);
     const t = document.createElement('meta'); t.name = 'mobile-web-app-capable'; t.content = 'yes'; document.head.appendChild(t);
+    const v = document.createElement('meta'); v.name = 'apple-mobile-web-app-status-bar-style'; v.content = 'black-translucent'; document.head.appendChild(v);
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data && e.data.type === 'SW_UPDATED') showToast('🔄 Nueva versión disponible, recarga');
+    });
+  }
 }
 
 async function enterApp() {
@@ -47,9 +53,20 @@ async function enterApp() {
     }
     injectDynamicUI();
     await ensureRoleDetails();
+    // Si eres trabajadora remota, precargar calls.js para que el timbre funcione desde cualquier sección
+    if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status === 'approved') {
+      loadScript('calls.js');
+    }
     updateHeader(); loadModules();
-    const last = sessionStorage.getItem('fendyx_last_section');
-    showSection(LOADERS[last] || last === 'dashboard' ? (last || 'dashboard') : 'dashboard');
+    // Restaurar sección desde localStorage (compatible con iOS Safari y PWA)
+    const last = localStorage.getItem('fendyx_last_section');
+    const valid = last && LOADERS[last] && (
+      (last !== 'delivery' || currentProfile.role === 'delivery') &&
+      (last !== 'girls' || currentProfile.role !== 'remote_worker') &&
+      (last !== 'kyc' || currentProfile.role === 'remote_worker') &&
+      (last !== 'admin' || currentProfile.role === 'admin')
+    );
+    showSection(valid ? last : 'dashboard');
     startRealtime();
   } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
 }
@@ -109,7 +126,9 @@ function injectDynamicUI() {
     body.has-banner .app-main{padding-top:130px}
     .kyc-img{width:120px;height:85px;object-fit:cover;border-radius:10px;border:1px solid var(--border-strong);margin:4px;cursor:pointer}
     .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}
-    .panic-fab{position:fixed;right:20px;bottom:170px;z-index:160;width:56px;height:56px;border-radius:50%;border:2px solid #ff3b6b;background:rgba(255,59,107,.18);color:#ff3b6b;font-size:1.4rem;cursor:pointer;backdrop-filter:blur(8px);animation:pulse 2.5s infinite}`;
+    .panic-fab{position:fixed;right:20px;bottom:170px;z-index:160;width:56px;height:56px;border-radius:50%;border:2px solid #ff3b6b;background:rgba(255,59,107,.18);color:#ff3b6b;font-size:1.4rem;cursor:pointer;backdrop-filter:blur(8px);animation:pulse 2.5s infinite}
+    .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
+    .incoming-call b{display:block}`;
   document.head.appendChild(st);
 
   const banner = document.createElement('div');
@@ -119,9 +138,16 @@ function injectDynamicUI() {
 
   const panic = document.createElement('button');
   panic.id = 'panicBtn'; panic.className = 'panic-fab'; panic.textContent = '🆘';
-  panic.title = 'Botón de pánico: envía tu ubicación al admin';
+  panic.title = 'Botón de pánico';
   panic.onclick = () => sendPanic('general');
   document.body.appendChild(panic);
+
+  // Banner GLOBAL de llamada entrante (siempre en el DOM, funciona desde cualquier sección)
+  if (!document.getElementById('incomingCall')) {
+    const inc = document.createElement('div');
+    inc.id = 'incomingCall'; inc.className = 'incoming-call hidden';
+    document.body.appendChild(inc);
+  }
 
   const girls = document.createElement('section');
   girls.id = 'section-girls'; girls.className = 'app-section';
@@ -232,7 +258,7 @@ function toggleUserMenu() { document.getElementById('userMenu').classList.toggle
 document.addEventListener('click', e => {
   if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden');
 });
-async function handleLogout() { sessionStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
+async function handleLogout() { localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
 function loadModules() {
   const mods = [
@@ -243,7 +269,6 @@ function loadModules() {
     { id: 'reservations', icon: '📅', n: 'Reservas' },
     { id: 'orders', icon: '📦', n: 'Pedidos' },
     { id: 'remote', icon: '💼', n: 'Trabajo Remoto' },
-    { id: 'agenda', icon: '🗓️', n: 'Agenda' },
     { id: 'marketplace', icon: '🛒', n: 'Marketplace' },
     { id: 'chat', icon: '💬', n: 'Chat' },
     { id: 'tokens', icon: '◈', n: 'Tokens' },
@@ -269,7 +294,7 @@ const LOADERS = {
   radar: () => loadRadar(), events: () => loadEvents(),
   restaurants: () => loadRestaurants(), reservations: () => loadReservations(),
   orders: () => loadOrders(), delivery: () => loadDeliveryHub(),
-  remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(), agenda: () => loadAgenda(),
+  remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(),
   marketplace: () => loadMarketplace(), chat: () => loadConversations(), tokens: () => loadTransactions(),
   profile: () => loadProfileSection(), profileedit: () => fillProfilePro(), admin: () => loadAdmin()
 };
@@ -277,7 +302,8 @@ function loadScript(file) {
   if (loadedScripts[file]) return loadedScripts[file];
   loadedScripts[file] = new Promise(res => {
     const s = document.createElement('script');
-    s.src = 'js/' + file; s.onload = res; s.onerror = res;
+    s.src = 'js/' + file + '?v=' + Date.now(); // cache-bust para cambios en vivo
+    s.onload = res; s.onerror = res;
     document.body.appendChild(s);
   });
   return loadedScripts[file];
@@ -286,7 +312,8 @@ async function showSection(name) {
   document.querySelectorAll('.app-section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + name)?.classList.add('active');
   document.getElementById('userMenu')?.classList.add('hidden');
-  sessionStorage.setItem('fendyx_last_section', name);
+  // Persistencia iOS-friendly: localStorage en lugar de sessionStorage
+  try { localStorage.setItem('fendyx_last_section', name); } catch(e) {}
   const navMap = { dashboard: 0, map: 1, radar: 2, chat: 3, tokens: 4 };
   document.querySelectorAll('.bottom-nav .nav-item').forEach((n, i) => n.classList.toggle('active', i === navMap[name]));
   if (MODULE_FILES[name]) await loadScript(MODULE_FILES[name]);
@@ -302,7 +329,28 @@ function haversine(a, b, c, d) {
 function fmtDist(m) { return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km'; }
 function stars(r) { const n = Math.round(parseFloat(r) || 0); return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
 function driverLevel(n) { return n >= 150 ? '💎 Élite' : n >= 50 ? '🥇 Experto' : n >= 10 ? '🥈 Confiable' : '🥉 Nuevo'; }
-function getPos() { return new Promise(res => { if (!navigator.geolocation) return res(null); navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { timeout: 5000 }); }); }
+
+// ===== GPS COMPATIBLE iOS Safari =====
+function getPos() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      err => {
+        // iOS a veces falla la primera vez, reintentamos con opciones más relajadas
+        navigator.geolocation.getCurrentPosition(
+          p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
+          () => {
+            if (err.code === 1) showToast('📍 iOS: permite la ubicación en Ajustes → Safari → Ubicación');
+            res(null);
+          },
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  });
+}
 function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 function showToast(msg) {
@@ -329,7 +377,7 @@ function startRealtime() {
   liveChannel = db.channel('fendyx-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => {
-      if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO! Revisa Panel Admin → Seguridad'); navigator.vibrate?.([300, 100, 300]); }
+      if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO! Revisa Seguridad'); navigator.vibrate?.([300, 100, 300]); }
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => {
       if (p.new.id === currentUser.id) { loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); }); }
@@ -342,27 +390,31 @@ function startRealtime() {
       }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-      if (document.getElementById('section-agenda')?.classList.contains('active')) loadAgenda?.();
+      if (typeof loadAgenda === 'function' && document.getElementById('section-agenda')?.classList.contains('active')) loadAgenda();
     })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, p => {
+    // 🔔 TIMBRE GLOBAL: funciona aunque no estés en la sección de trabajadora
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, async p => {
       if (p.new.worker_id === currentUser.id && p.new.status === 'active') {
-        loadScript('calls.js').then(() => showIncomingCall(p.new));
+        navigator.vibrate?.([300, 120, 300]);
+        await loadScript('calls.js');
+        if (typeof showIncomingCall === 'function') showIncomingCall(p.new);
       }
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, p => {
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, async p => {
       if (p.new.status === 'ended' && (p.new.worker_id === currentUser.id || p.new.client_id === currentUser.id)) {
-        loadScript('calls.js').then(() => remoteHungUp(p.new));
+        await loadScript('calls.js');
+        if (typeof remoteHungUp === 'function') remoteHungUp(p.new);
       }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-      if (document.getElementById('section-orders')?.classList.contains('active')) loadOrders?.();
-      if (document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub?.();
+      if (typeof loadOrders === 'function' && document.getElementById('section-orders')?.classList.contains('active')) loadOrders();
+      if (typeof loadDeliveryHub === 'function' && document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'radar_presences' }, () => {
-      if (document.getElementById('section-radar')?.classList.contains('active')) loadRadarUsers?.();
+      if (typeof loadRadarUsers === 'function' && document.getElementById('section-radar')?.classList.contains('active')) loadRadarUsers();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharge_requests' }, () => {
-      if (currentProfile.role === 'admin' && document.getElementById('admin-recharges')?.classList.contains('active')) loadRechargeRequests?.();
+      if (currentProfile.role === 'admin' && typeof loadRechargeRequests === 'function' && document.getElementById('admin-recharges')?.classList.contains('active')) loadRechargeRequests();
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_branding' }, () => loadBranding())
     .subscribe();

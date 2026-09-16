@@ -1,5 +1,4 @@
 'use strict';
-let jitsiApi = null, callInterval = null, callSeconds = 0, callCostTotal = 0, currentCallId = null, iAmClient = false, currentCallRate = 0;
 
 async function loadGirls() {
   if (!requireActive()) return;
@@ -75,56 +74,36 @@ async function submitKycDocs(e) {
   if (fcf) { const p2 = 'kyc/' + currentUser.id + '_face_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p2, fcf); if (!r.error) up.face_photo_url = db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl; }
   await db.from('profiles').update(up).eq('id', currentUser.id);
   await loadProfile(); fillKycForm();
-  showToast(' Documentos enviados. El admin los revisará.');
+  showToast('📨 Documentos enviados. El admin los revisará.');
 }
 
 async function loadMyCalls() {
   const { data } = await db.from('video_calls').select('*, profiles!video_calls_client_id_fkey(full_name)').eq('worker_id', currentUser.id).eq('status', 'active');
   document.getElementById('myCallsList').innerHTML = (data || []).map(c =>
-    `<div class="row-item"><div class="row-main"><b>📞 ${c.profiles?.full_name || 'Cliente'}</b><small>◈ ${c.rate_per_minute}/min</small></div><button class="btn-small success" onclick="joinCall('${c.id}','${c.room_id}',${c.rate_per_minute})">Contestar</button></div>`).join('')
+    `<div class="row-item"><div class="row-main"><b>📞 ${c.profiles?.full_name || 'Cliente'}</b><small>◈ ${c.rate_per_minute}/min</small></div>
+     <button class="btn-small success" onclick="joinCall('${c.id}','${c.room_id}',${c.rate_per_minute})">Contestar</button></div>`).join('')
     || '<p class="empty-state">Sin llamadas entrantes</p>';
 }
 
+// ===== LLAMADAS CON MOTOR WebRTC INTEGRADO =====
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
   rate = parseFloat(rate) || 0.2;
   if (!currentProfile.unlimited_tokens && parseFloat(currentProfile.tokens_balance) < rate) { showToast('❌ Saldo insuficiente para 1 minuto'); return; }
   const roomId = 'FENDYX' + Date.now();
-  const { data: call } = await db.from('video_calls').insert({ worker_id: workerId, client_id: currentUser.id, room_id: roomId, rate_per_minute: rate, status: 'active', started_at: new Date().toISOString() }).select().single();
-  iAmClient = true; currentCallRate = rate; openCallUI(call.id, roomId);
+  const { data: call } = await db.from('video_calls').insert({
+    worker_id: workerId, client_id: currentUser.id, room_id: roomId,
+    rate_per_minute: rate, status: 'active', started_at: new Date().toISOString()
+  }).select().single();
+  await loadScript('calls.js');
+  await startWebCall(roomId, { rate, rowId: call.id, asClient: true });
 }
-async function joinCall(callId, roomId, rate) { iAmClient = false; currentCallRate = rate; openCallUI(callId, roomId); }
-function openCallUI(callId, roomId) {
-  currentCallId = callId; callSeconds = 0; callCostTotal = 0;
-  document.getElementById('callTimer').textContent = '00:00';
-  document.getElementById('callCost').textContent = currentProfile.unlimited_tokens ? '∞ ADMIN' : '◈ 0.00';
-  openModal('modal-call');
-  jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', { roomName: roomId, width: '100%', height: '100%', parentNode: document.getElementById('jitsiContainer'), userInfo: { displayName: currentProfile.full_name }, configOverwrite: { prejoinPageEnabled: false }, interfaceConfigOverwrite: { SHOW_JITSI_WATERMARK: false } });
-  callInterval = setInterval(async () => {
-    callSeconds++;
-    document.getElementById('callTimer').textContent = String(Math.floor(callSeconds / 60)).padStart(2, '0') + ':' + String(callSeconds % 60).padStart(2, '0');
-    if (iAmClient && callSeconds % 60 === 0) {
-      const { data: nb, error } = await db.rpc('pay_call_minute', { p_call: currentCallId });
-      if (error || nb === -1) { showToast('❌ Saldo agotado o llamada inactiva.'); endCall(); return; }
-      callCostTotal += currentCallRate;
-      if (!currentProfile.unlimited_tokens) {
-        currentProfile.tokens_balance = nb; updateHeader();
-        document.getElementById('callCost').textContent = '◈ ' + callCostTotal.toFixed(2);
-        if (nb <= 0) { showToast('❌ Saldo agotado. Llamada finalizada.'); endCall(); }
-      } else {
-        document.getElementById('callCost').textContent = '∞ ADMIN · trabajadora cobró ◈ ' + callCostTotal.toFixed(2);
-      }
-    }
-  }, 1000);
-}
-async function endCall() {
-  if (jitsiApi) { jitsiApi.dispose(); jitsiApi = null; }
-  if (callInterval) { clearInterval(callInterval); callInterval = null; }
-  if (currentCallId) await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentCallId);
-  currentCallId = null; closeModal('modal-call');
-  showToast('📞 Llamada finalizada · Costo: ' + (currentProfile.unlimited_tokens ? '∞ (admin)' : '◈ ' + callCostTotal.toFixed(2)));
+async function joinCall(callId, roomId, rate) {
+  await loadScript('calls.js');
+  await joinWebCall(roomId, { rate: parseFloat(rate) || 0, rowId: callId, asClient: false });
 }
 
+// ===== AGENDA =====
 function openBook(workerId, rate) { window._bookTarget = { workerId, rate }; openModal('modal-book'); }
 async function confirmBooking() {
   const d = document.getElementById('bookDate').value, t = document.getElementById('bookTime').value;

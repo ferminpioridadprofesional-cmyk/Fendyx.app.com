@@ -1,12 +1,12 @@
 'use strict';
 let jitsiApi = null, callInterval = null, callSeconds = 0, callCostTotal = 0, currentCallId = null, iAmClient = false, currentCallRate = 0;
+
 async function loadWorkers() {
   const isWorker = currentProfile.role === 'remote_worker';
   document.getElementById('workerPanel').classList.toggle('hidden', !isWorker);
   if (isWorker) {
     document.getElementById('workerSpecialty').value = roleDetails?.specialty || '';
-    document.getElementById('workerRate').value = roleDetails?.rate_per_minute || '';
-    document.getElementById('workerBio').value = currentProfile.bio || '';
+    document.getElementById('workerBio').value = currentProfile.bio || roleDetails?.bio || '';
     document.getElementById('workerOnline').checked = !!currentProfile.is_online;
     loadMyCalls();
   }
@@ -16,31 +16,46 @@ async function loadWorkers() {
     return `<div class="card-item"><div class="card-title">${w.full_name}</div>
       <span class="status-pill ${w.is_online ? 'online' : 'offline'}">${w.is_online ? 'EN LÍNEA' : 'DESCONECTADO'}</span>
       <div class="card-desc">${rd?.specialty || 'Sin especialidad'} · ${stars(w.rating)}</div>
-      <div class="card-meta">${rd?.bio || ''}</div><div class="price-tag">◈ ${rd?.rate_per_minute || 1}/min</div><br>
-      <button class="btn-small success" onclick="startCall('${w.id}',${rd?.rate_per_minute || 1})" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button>
-      <button class="btn-small" onclick="openBook('${w.id}',${rd?.rate_per_minute || 1})">📅 Agendar</button></div>`;
-  }).join('') || '<p class="empty-state">No hay trabajadores remotos aún</p>';
+      <div class="card-meta">${rd?.bio || ''}</div>
+      <div class="price-tag">◈ 0.5/min (tarifa fija)</div><br>
+      <button class="btn-small success" onclick="startCall('${w.id}',0.5)" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button>
+      <button class="btn-small" onclick="openBook('${w.id}',0.5)">📅 Agendar</button></div>`;
+  }).join('') || '<p class="empty-state">No hay trabajadoras disponibles aún</p>';
 }
+
 async function saveWorkerProfile(e) {
   e.preventDefault();
-  await db.from('role_details').upsert({ user_id: currentUser.id, role_type: 'remote_worker', specialty: document.getElementById('workerSpecialty').value, rate_per_minute: parseFloat(document.getElementById('workerRate').value), bio: document.getElementById('workerBio').value }, { onConflict: 'user_id' });
-  await db.from('profiles').update({ bio: document.getElementById('workerBio').value, is_online: document.getElementById('workerOnline').checked }).eq('id', currentUser.id);
+  await db.from('role_details').upsert({
+    user_id: currentUser.id,
+    role_type: 'remote_worker',
+    specialty: document.getElementById('workerSpecialty').value,
+    rate_per_minute: 0.5, // Tarifa fija, no editable
+    bio: document.getElementById('workerBio').value
+  }, { onConflict: 'user_id' });
+  await db.from('profiles').update({
+    bio: document.getElementById('workerBio').value,
+    is_online: document.getElementById('workerOnline').checked
+  }).eq('id', currentUser.id);
   showToast('✅ Perfil profesional guardado');
   await loadProfile(); loadWorkers();
 }
+
 async function loadMyCalls() {
   const { data } = await db.from('video_calls').select('*, profiles!video_calls_client_id_fkey(full_name)').eq('worker_id', currentUser.id).eq('status', 'active');
   document.getElementById('myCallsList').innerHTML = (data || []).map(c =>
     `<div class="row-item"><div class="row-main"><b>📞 ${c.profiles?.full_name || 'Cliente'}</b><small>◈ ${c.rate_per_minute}/min</small></div><button class="btn-small success" onclick="joinCall('${c.id}','${c.room_id}',${c.rate_per_minute})">Contestar</button></div>`).join('')
     || '<p class="empty-state">Sin llamadas entrantes</p>';
 }
+
 async function startCall(workerId, rate) {
   if (parseFloat(currentProfile.tokens_balance) < rate) { showToast('❌ Saldo insuficiente para 1 minuto'); return; }
   const roomId = 'FENDYX' + Date.now();
   const { data: call } = await db.from('video_calls').insert({ worker_id: workerId, client_id: currentUser.id, room_id: roomId, rate_per_minute: rate, status: 'active', started_at: new Date().toISOString() }).select().single();
   iAmClient = true; currentCallRate = rate; openCallUI(call.id, roomId);
 }
+
 async function joinCall(callId, roomId, rate) { iAmClient = false; currentCallRate = rate; openCallUI(callId, roomId); }
+
 function openCallUI(callId, roomId) {
   currentCallId = callId; callSeconds = 0; callCostTotal = 0;
   document.getElementById('callTimer').textContent = '00:00';
@@ -61,6 +76,7 @@ function openCallUI(callId, roomId) {
     }
   }, 1000);
 }
+
 async function endCall() {
   if (jitsiApi) { jitsiApi.dispose(); jitsiApi = null; }
   if (callInterval) { clearInterval(callInterval); callInterval = null; }
@@ -68,15 +84,18 @@ async function endCall() {
   currentCallId = null; closeModal('modal-call');
   showToast('📞 Llamada finalizada · Costo: ◈ ' + callCostTotal.toFixed(2));
 }
+
 function openBook(workerId, rate) { window._bookTarget = { workerId, rate }; openModal('modal-book'); }
+
 async function confirmBooking() {
   const d = document.getElementById('bookDate').value, t = document.getElementById('bookTime').value;
   if (!d || !t) { showToast('Elige fecha y hora'); return; }
   const dur = parseInt(document.getElementById('bookDuration').value);
   const price = (window._bookTarget.rate * dur).toFixed(2);
   await db.from('bookings').insert({ worker_id: window._bookTarget.workerId, client_id: currentUser.id, book_date: d, book_time: t, duration_min: dur, price });
-  closeModal('modal-book'); showToast('📅 Solicitud enviada. El trabajador la confirmará.'); loadAgenda();
+  closeModal('modal-book'); showToast('📅 Solicitud enviada. La trabajadora la confirmará.'); loadAgenda();
 }
+
 async function loadAgenda() {
   const isWorker = currentProfile.role === 'remote_worker';
   document.getElementById('workerBookingsWrap').classList.toggle('hidden', !isWorker);
@@ -98,4 +117,5 @@ async function loadAgenda() {
       ${b.status === 'pending' && b.client_id === currentUser.id ? `<button class="btn-small danger" onclick="setBooking('${b.id}','cancelled')">Cancelar</button>` : ''}</div></div>`;
   }).join('') || '<p class="empty-state">Sin citas aún</p>';
 }
+
 async function setBooking(id, status) { await db.from('bookings').update({ status }).eq('id', id); showToast('✅ Cita actualizada'); loadAgenda(); }

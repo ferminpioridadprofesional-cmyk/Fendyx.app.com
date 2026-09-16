@@ -22,7 +22,7 @@ function injectAdminExtras() {
   }
 }
 async function purgeActivity() {
-  if (!confirm('Se BORRARÁN POR COMPLETO el registro de actividad y el historial de transacciones de la base de datos. Los saldos NO se afectan. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁN el registro de actividad y el historial de transacciones de la BD. Los saldos NO se afectan. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_logs');
   if (error) { showToast('❌ ' + error.message); return; }
   showToast('🗑 Actividad purgada: ' + data); loadAdminOverview();
@@ -48,6 +48,7 @@ function startSafetyRealtime() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
     .subscribe();
 }
+
 async function loadAdminOverview() {
   const [u, o, c, tx] = await Promise.all([
     db.from('profiles').select('tokens_balance'),
@@ -95,11 +96,17 @@ function renderAdminUsers() {
      <td>
        <button class="btn-small" onclick="openUserFile('${u.id}')">👁 Ficha</button>
        <button class="btn-small" onclick="changeUserPass('${u.email}')">🔑</button>
+       ${u.role !== 'admin' ? `<button class="btn-small danger" onclick="deleteUserFully('${u.id}','${(u.email || '').replace(/'/g, '')}')">🗑 Eliminar</button>` : ''}
        ${u.role !== 'admin' ? (u.is_banned ? `<button class="btn-small success" onclick="toggleBan('${u.id}',false)">Desbanear</button>` : `<button class="btn-small danger" onclick="toggleBan('${u.id}',true)">Banear</button>`) : ''}
      </td></tr>`).join('');
 }
+async function deleteUserFully(id, email) {
+  if (!confirm('ELIMINAR POR COMPLETO a ' + email + ' de la base de datos (perfil, chats, pedidos, tokens, todo). Su correo quedará LIBRE para registrarse de nuevo. ¿Continuar?')) return;
+  const { data, error } = await db.rpc('admin_delete_user', { p_uid: id });
+  if (error || (data && data.startsWith('ERROR'))) { showToast('❌ ' + (data || error.message)); return; }
+  showToast('🗑 Usuario eliminado por completo'); loadAdminUsers(); loadAdminOverview();
+}
 
-// ===== FICHA COMPLETA DEL USUARIO + CONTROL DE TOKENS =====
 async function openUserFile(id) {
   const u = adminUsersCache.find(x => x.id === id); if (!u) return;
   const [rd, orders, txs, reps, panics] = await Promise.all([
@@ -114,35 +121,35 @@ async function openUserFile(id) {
   document.getElementById('ufBody').innerHTML = `
     <div class="dim" style="text-align:left">
       <b>Email:</b> ${u.email}<br><b>Género:</b> ${u.gender || '—'} · <b>Edad:</b> ${u.age || '—'}<br>
-      <b>WhatsApp:</b> ${u.whatsapp ? `<a target="_blank" href="https://wa.me/${(u.whatsapp||'').replace(/[^0-9]/g,'')}">${u.whatsapp}</a>` : '—'}<br>
+      <b>WhatsApp:</b> ${u.whatsapp ? `<a target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">${u.whatsapp}</a>` : '—'}<br>
       <b>Rol:</b> ${ROLE_LABELS[u.role]} · <b>KYC:</b> ${u.kyc_status} · <b>Verificado:</b> ${u.is_verified ? 'Sí' : 'No'}<br>
       <b>Ocupación:</b> ${u.occupation || '—'} · <b>Zodiaco:</b> ${u.zodiac || '—'}<br>
       <b>Especialidad:</b> ${d.specialty || '—'} · <b>Nivel:</b> ${levelInfo(d.worker_level).name} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || '—'}/min<br>
       <b>Intereses:</b> ${(u.interests || []).join(', ') || '—'}<br><b>Preferencias:</b> ${(u.preferences || []).join(', ') || '—'}<br>
       <b>Bio:</b> ${u.bio || d.bio || '—'}<br>
       <b>Código referido:</b> ${u.referral_code || '—'} · <b>Referido por:</b> ${u.referred_by ? 'Sí' : 'No'}<br>
-      <b>Pedidos:</b> ${orders.count || 0} · <b>Transacciones:</b> ${txs.count || 0} · <b>Reportes en contra:</b> ${reps.count || 0} · <b>Pánicos:</b> ${panics.count || 0}<br>
+      <b>Pedidos:</b> ${orders.count || 0} · <b>Transacciones:</b> ${txs.count || 0} · <b>Reportes:</b> ${reps.count || 0} · <b>Pánicos:</b> ${panics.count || 0}<br>
       ${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : ''}
       ${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : ''}
       ${(u.gallery_urls || []).map(g => `<img class="kyc-img" src="${g}" onclick="window.open('${g}')">`).join('')}
     </div>
     <h4 class="sub-title">◈ Control de tokens</h4>
     <div class="owner-form" style="text-align:left">
-      <div class="dim">Saldo actual: <b>${parseFloat(u.tokens_balance||0).toFixed(2)}</b> · Bloqueado: <b>${u.tokens_locked ? 'SÍ 🔒' : 'No'}</b> · Retención: <b>${parseFloat(u.tokens_retained||0).toFixed(2)}</b></div>
-      <input type="number" id="ufBalance" step="0.01" placeholder="Nuevo saldo absoluto" value="${parseFloat(u.tokens_balance||0).toFixed(2)}">
+      <div class="dim">Saldo: <b>${parseFloat(u.tokens_balance || 0).toFixed(2)}</b> · Bloqueado: <b>${u.tokens_locked ? 'SÍ 🔒' : 'No'}</b> · Retención: <b>${parseFloat(u.tokens_retained || 0).toFixed(2)}</b></div>
+      <input type="number" id="ufBalance" step="0.01" placeholder="Nuevo saldo absoluto" value="${parseFloat(u.tokens_balance || 0).toFixed(2)}">
       <div class="row-buttons">
-        <button class="btn-small success" onclick="ufAdj(${id},'${u.id}',1)">+ Sumar</button>
-        <button class="btn-small danger" onclick="ufAdj(${id},'${u.id}',-1)">− Restar</button>
+        <button class="btn-small success" onclick="ufAdj(1)">+ Sumar</button>
+        <button class="btn-small danger" onclick="ufAdj(-1)">− Restar</button>
       </div>
       <input type="number" id="ufAdjAmt" step="0.01" placeholder="Monto a sumar/restar">
-      <input type="number" id="ufRetained" step="0.01" placeholder="Retención (tokens congelados)" value="${parseFloat(u.tokens_retained||0).toFixed(2)}">
+      <input type="number" id="ufRetained" step="0.01" placeholder="Retención (tokens congelados)" value="${parseFloat(u.tokens_retained || 0).toFixed(2)}">
       <label class="check-line"><input type="checkbox" id="ufLocked" ${u.tokens_locked ? 'checked' : ''}> 🔒 Bloquear TODOS sus tokens</label>
       <input type="text" id="ufReason" placeholder="Razón del ajuste (auditoría)">
       <button class="btn-primary" onclick="saveUserTokens('${u.id}')">💾 Guardar tokens</button>
     </div>`;
   openModal('modal-userfile');
 }
-function ufAdj(numId, uid, sign) {
+function ufAdj(sign) {
   const bal = document.getElementById('ufBalance');
   const amt = parseFloat(document.getElementById('ufAdjAmt').value) || 0;
   bal.value = (parseFloat(bal.value) + sign * amt).toFixed(2);
@@ -255,6 +262,7 @@ async function loadAdminContent() {
   document.getElementById('adminMarket').innerHTML = (m.data || []).map(x => `<div class="row-item"><div class="row-main"><b>${x.title}</b></div><button class="btn-small danger" onclick="deleteContent('marketplace_items','${x.id}')">🗑</button></div>`).join('') || '<p class="empty-state">Vacío</p>';
 }
 async function deleteContent(table, id) { if (!confirm('¿Eliminar?')) return; await db.from(table).delete().eq('id', id); showToast('🗑 Eliminado'); loadAdminContent(); }
+
 async function loadAdminWithdrawals() {
   const { data } = await db.from('withdrawals').select('*, profiles(email, full_name)').order('created_at', { ascending: false });
   document.getElementById('withdrawalsAdmin').innerHTML = (data || []).map(w =>
@@ -269,13 +277,14 @@ async function resolveWithdrawal(id, status) {
   await db.from('withdrawals').update({ status }).eq('id', id);
   showToast(status === 'approved' ? '✅ Aprobado' : '↩️ Rechazado'); loadAdminWithdrawals();
 }
+
 async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u =>
     `<div class="row-item"><div class="row-main"><b>${u.full_name} · ${u.age || '?'} años</b><small>${u.whatsapp || '—'} · ${u.email}</small>
      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : ''}</div>
-     ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp||'').replace(/[^0-9]/g,'')}">💬</a>` : ''}</div>
-     <div class="row-actions"><button class="btn-small success" onclick="startKyc('${u.id}','${(u.full_name||'').replace(/'/g,'')}')">🎥</button><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
+     ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">💬</a>` : ''}</div>
+     <div class="row-actions"><button class="btn-small success" onclick="startKyc('${u.id}','${(u.full_name || '').replace(/'/g, '')}')">🎥</button><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
     || '<p class="empty-state">Nadie pendiente 🎉</p>';
 }
 async function approveKyc(id) { await db.from('profiles').update({ kyc_status: 'approved', is_verified: true, is_active: true }).eq('id', id); showToast('✅ Verificada'); loadKycList(); }
@@ -301,6 +310,7 @@ async function loadWorkersAdmin() {
 }
 async function setWorkerLevel(id, level) { const { data: l } = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single(); await db.from('role_details').update({ worker_level: l.level, rate_per_minute: l.rate }).eq('user_id', id); showToast('✅ ' + l.name); loadWorkersAdmin(); }
 async function setWorkerRate(id) { const rate = parseFloat(document.getElementById('rate_' + id).value); if (isNaN(rate) || rate < 0.2 || rate > 3) { showToast('0.2 a 3'); return; } await db.from('role_details').update({ rate_per_minute: rate }).eq('user_id', id); showToast('✅ Tarifa'); loadWorkersAdmin(); }
+
 async function runAudit() {
   const q = document.getElementById('auditSearch').value.trim();
   const box = document.getElementById('auditResults');

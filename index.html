@@ -6,7 +6,7 @@
 <title>FENDYX - Acceso</title>
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/auth.css">
-     <link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/components.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
@@ -35,6 +35,14 @@
     </form>
     <form id="form-register" class="auth-form" onsubmit="handleRegister(event)">
       <div class="input-group"><input type="text" id="regName" placeholder="Nombre completo" autocomplete="name" required></div>
+      <div class="input-group">
+        <select id="regGender" required>
+          <option value="">Selecciona tu género</option>
+          <option value="male">Hombre</option>
+          <option value="female">Mujer</option>
+          <option value="other">Otro</option>
+        </select>
+      </div>
       <div class="input-group"><input type="email" id="regEmail" placeholder="Correo electrónico" autocomplete="email" required></div>
       <div class="input-group"><input type="number" id="regAge" placeholder="Edad (mínimo 18)" min="18" max="100" required></div>
       <div class="input-group password-group">
@@ -48,7 +56,7 @@
           <option value="restaurant">🍽️ Restaurante / Local</option>
           <option value="delivery">🛵 Domiciliario</option>
           <option value="nightclub">🎵 Bar / Discoteca</option>
-          <option value="remote_worker">💻 Trabajador Remoto</option>
+          <option value="remote_worker">💻 Trabajadora Remota (Solo mujeres)</option>
         </select>
       </div>
       <div id="roleFields"></div>
@@ -59,7 +67,6 @@
   </div>
 </div>
 
-<!-- MODAL: Código de verificación de correo -->
 <div id="modal-verify" class="modal hidden"><div class="modal-content">
   <h3>📧 Verifica tu correo</h3>
   <p class="dim">Escribe el código de 6 dígitos enviado a <b id="verifyEmailLabel"></b></p>
@@ -69,7 +76,6 @@
   <button class="btn-secondary" onclick="closeModal('modal-verify')">Cancelar</button>
 </div></div>
 
-<!-- MODAL: Recuperar contraseña (3 pasos) -->
 <div id="modal-recover" class="modal hidden"><div class="modal-content">
   <div class="modal-head"><h3>🔑 Recuperar contraseña</h3><button class="modal-close" onclick="closeModal('modal-recover')">✕</button></div>
   <div id="recoverStep1">

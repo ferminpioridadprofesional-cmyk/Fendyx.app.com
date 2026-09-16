@@ -2,7 +2,7 @@
 let viewedUserId = null, kycApi = null;
 const INTERESTS = ['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
 const PREFERENCES = ['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
-const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
 const _pe = { interests: new Set(), preferences: new Set(), zodiac: null };
 
 function toggleChip(el, group, value) {
@@ -108,8 +108,15 @@ async function viewUserProfile(userId) {
   const canCall = data.role === 'remote_worker' && data.kyc_status === 'approved' && data.id !== currentUser.id;
   actions.innerHTML = `
     ${canCall ? `<button class="btn-primary" onclick="callFromProfile('${data.id}',${rd?.rate_per_minute || lv.rate})">📹 Llamar · ◈ ${rd?.rate_per_minute || lv.rate}/min</button>` : ''}
-    ${data.id !== currentUser.id ? `<button class="btn-secondary" onclick="messageFromProfile()">💬 Enviar mensaje</button>` : ''}`;
+    ${data.id !== currentUser.id ? `<button class="btn-secondary" onclick="messageFromProfile()">💬 Enviar mensaje</button>` : ''}
+    ${data.id !== currentUser.id ? `<button class="btn-secondary" style="border-color:var(--error);color:var(--error)" onclick="reportFromProfile()">🚩 Reportar perfil</button>` : ''}`;
   openModal('modal-userprofile');
+}
+async function reportFromProfile() {
+  const reason = prompt('Motivo del reporte (estafa, acoso, suplantación, contenido inapropiado…):');
+  if (!reason || !reason.trim()) return;
+  await reportUser(viewedUserId, reason.trim());
+  closeModal('modal-userprofile');
 }
 async function callFromProfile(id, rate) {
   closeModal('modal-userprofile');

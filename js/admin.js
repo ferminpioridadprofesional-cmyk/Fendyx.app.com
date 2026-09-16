@@ -52,7 +52,6 @@ async function saveAppName() {
   await loadBranding(); showToast('✅ Nombre actualizado: ' + name);
 }
 
-// ===== USUARIOS =====
 async function loadAdminUsers() {
   if (!document.getElementById('adminPassLog')) {
     document.getElementById('admin-users').insertAdjacentHTML('beforeend',
@@ -137,7 +136,6 @@ async function toggleBan(id, ban) {
   showToast(ban ? '🚫 Baneado con razón' : '✅ Desbaneado'); loadAdminUsers();
 }
 
-// ===== 🚨 CENTRO DE SEGURIDAD: PÁNICO + REPORTES =====
 async function loadSafety() {
   const { data: panics } = await db.from('panic_alerts').select('*, profiles(email, full_name)').order('created_at', { ascending: false }).limit(20);
   document.getElementById('panicList').innerHTML = (panics || []).map(p =>
@@ -149,7 +147,6 @@ async function loadSafety() {
        <button class="btn-small danger" onclick="toggleBan('${p.user_id}',true)">🚫</button>
      </div></div>`).join('')
     || '<p class="empty-state">Sin alertas de pánico 🎉</p>';
-
   const { data: reps } = await db.from('reports').select('*, messages(content), target:profiles!reports_target_user_id_fkey(email, full_name), reporter:profiles!reports_reporter_id_fkey(email)').order('created_at', { ascending: false }).limit(30);
   document.getElementById('reportsList').innerHTML = (reps || []).map(r =>
     `<div class="row-item"><div class="row-main"><b>${r.auto_flag ? '🤖 Auto-moderación' : '🚩 Reporte manual'}</b>
@@ -165,14 +162,13 @@ async function loadSafety() {
 async function resolvePanic(id) {
   await db.from('panic_alerts').update({ status: 'resolved' }).eq('id', id);
   await db.rpc('log_admin_action', { p_action: 'panic_resolve', p_target: id, p_detail: 'Alerta atendida' });
-  showToast('✅ Alerta marcada como resuelta'); loadSafety();
+  showToast('✅ Alerta resuelta'); loadSafety();
 }
 async function closeReport(id) {
   await db.from('reports').update({ status: 'closed' }).eq('id', id);
   showToast('Reporte descartado'); loadSafety();
 }
 
-// ===== RECARGAS =====
 async function loadRechargeRequests() {
   const { data } = await db.from('recharge_requests').select('*, profiles(email, full_name)').order('created_at', { ascending: false });
   const pend = (data || []).filter(r => r.status === 'pending');
@@ -208,7 +204,6 @@ async function rejectRecharge(id) {
   showToast('❌ Solicitud rechazada'); loadRechargeRequests();
 }
 
-// ===== TOKENS / CONTENIDO / RETIROS =====
 async function adminAdjustTokens() {
   const email = document.getElementById('adminTokenEmail').value.trim().toLowerCase();
   const amount = parseFloat(document.getElementById('adminTokenAmount').value);
@@ -254,7 +249,6 @@ async function resolveWithdrawal(id, status) {
   showToast(status === 'approved' ? '✅ Retiro aprobado' : '↩️ Rechazado y reembolsado'); loadAdminWithdrawals();
 }
 
-// ===== KYC =====
 async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u =>
@@ -263,7 +257,11 @@ async function loadKycList() {
      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}
      ${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : '⚠️ sin rostro'}</div>
      ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">💬 WhatsApp</a>` : ''}</div>
-     <div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅ Aprobar</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
+     <div class="row-actions">
+       <button class="btn-small success" onclick="startKyc('${u.id}','${(u.full_name || '').replace(/'/g, '')}')">🎥 Llamar KYC</button>
+       <button class="btn-small success" onclick="approveKyc('${u.id}')">✅ Aprobar</button>
+       <button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button>
+     </div></div>`).join('')
     || '<p class="empty-state">Nadie pendiente de KYC 🎉</p>';
 }
 async function approveKyc(id) {
@@ -280,6 +278,26 @@ async function rejectKyc(id) {
   await db.rpc('log_admin_action', { p_action: 'kyc_reject', p_target: u?.email || id, p_detail: note });
   showToast('❌ Rechazada con nota'); loadKycList();
 }
+
+// ===== KYC POR VIDEOLLAMADA INTEGRADA (WebRTC propio) =====
+async function startKyc(userId, name) {
+  kycTarget = userId;
+  await loadScript('calls.js');
+  document.getElementById('kycTitle').textContent = '🎥 KYC: ' + name;
+  document.getElementById('kycVerifyBtn').classList.remove('hidden');
+  await startWebCall('FENDYX_KYC_' + userId.slice(0, 8), { rate: 0, rowId: null, asClient: true });
+  showToast('🎥 Sala KYC abierta. La usuaria entra desde su Perfil Pro.');
+}
+async function kycMarkVerified() {
+  if (!kycTarget) return;
+  await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget);
+  showToast('✅ Verificada y activada'); kycTarget = null; loadKycList();
+}
+function closeKyc() {
+  if (typeof callRoom !== 'undefined' && callRoom) { endWebCall(); }
+  else { closeModal('modal-kyc'); }
+}
+
 async function loadWorkersAdmin() {
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
   const lv = await db.from('worker_levels').select('*').order('level');
@@ -311,23 +329,6 @@ async function setWorkerRate(id) {
   showToast('✅ Tarifa: ◈ ' + rate + '/min'); loadWorkersAdmin();
 }
 
-// ===== KYC VIDEOLLAMADA + AUDITORÍA =====
-function startKyc(userId, name) {
-  kycTarget = userId;
-  disposeKycApis();
-  document.getElementById('kycTitle').textContent = '🎥 KYC: ' + name;
-  document.getElementById('kycVerifyBtn').classList.remove('hidden');
-  openModal('modal-kyc');
-  window._kycAdmin = new JitsiMeetExternalAPI('meet.jit.si', { roomName: 'FENDYX_KYC_' + userId.slice(0, 8), width: '100%', height: '100%', parentNode: document.getElementById('kycContainer'), userInfo: { displayName: 'Admin FENDYX' } });
-  showToast('🎥 Sala abierta. La usuaria entra desde su Perfil Pro.');
-}
-function disposeKycApis() { try { if (window._kycAdmin) { window._kycAdmin.dispose(); window._kycAdmin = null; } } catch (e) {} try { if (typeof kycApi !== 'undefined' && kycApi) { kycApi.dispose(); kycApi = null; } } catch (e) {} }
-async function kycMarkVerified() {
-  if (!kycTarget) return;
-  await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget);
-  showToast('✅ Verificada y activada'); kycTarget = null; closeKyc(); loadKycList();
-}
-function closeKyc() { disposeKycApis(); closeModal('modal-kyc'); }
 async function runAudit() {
   const q = document.getElementById('auditSearch').value.trim();
   const box = document.getElementById('auditResults');

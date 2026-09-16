@@ -1,5 +1,6 @@
 'use strict';
 const rejectedOffers = new Set();
+function driverGain(total) { return Math.max(2, parseFloat((total * 0.25).toFixed(2))); }
 async function loadDeliveryHub() {
   if (currentProfile.role !== 'delivery') return;
   const p = currentProfile, rd = roleDetails || {};
@@ -21,8 +22,7 @@ async function toggleAvailability() {
   const now = !currentProfile.driver_available;
   await db.from('profiles').update({ driver_available: now }).eq('id', currentUser.id);
   currentProfile.driver_available = now;
-  showToast(now ? '🟢 Conectado: recibirás ofertas' : '🔴 Desconectado');
-  loadDeliveryHub();
+  showToast(now ? '🟢 Conectado' : '🔴 Desconectado'); loadDeliveryHub();
 }
 async function loadOffers() {
   const { data } = await db.from('orders').select('*, restaurants(name, address, latitude, longitude), order_items(*)').eq('status', 'ready').is('driver_id', null).order('created_at', { ascending: false });
@@ -30,13 +30,13 @@ async function loadOffers() {
   document.getElementById('offersCount').textContent = offers.length + ' entregas cerca de ti';
   document.getElementById('offersList').innerHTML = offers.map(o => {
     const dist = (myLocation && o.restaurants?.latitude) ? haversine(myLocation.lat, myLocation.lng, o.restaurants.latitude, o.restaurants.longitude) : null;
-    const gain = (parseFloat(o.total) * 0.85).toFixed(2);
+    const gain = driverGain(o.total);
     const eta = dist !== null ? Math.round((dist / 1000 / 20) * 60 + 12) : null;
     const zone = (o.restaurants?.address || '').split(',')[0] + ' ···';
-    return `<div class="offer-card"><div class="offer-head"><b>🎁 ${o.restaurants?.name || 'Restaurante'}</b><span class="offer-gain">◈ ${gain}</span></div>
-      <div class="offer-data">Recoger: <span class="locked-addr">${zone}</span><br>📏 ${dist !== null ? fmtDist(dist) : '—'} · ⏱️ ${eta !== null ? eta + ' min aprox' : '—'} · 🧾 ${(o.order_items || []).length} art.</div>
-      <div class="offer-actions"><button class="btn-small success" onclick="acceptOffer('${o.id}')">✅ ACEPTAR</button><button class="btn-small danger" onclick="rejectOffer('${o.id}')">❌ RECHAZAR</button></div></div>`;
-  }).join('') || '<p class="empty-state">Sin ofertas nuevas por ahora</p>';
+    return `<div class="offer-card"><div class="offer-head"><b>🎁 ${o.restaurants?.name || 'Restaurante'}</b><span class="offer-gain">◈ ${gain.toFixed(2)}</span></div>
+      <div class="offer-data">Recoger: <span class="locked-addr">${zone}</span><br>📏 ${dist !== null ? fmtDist(dist) : '—'} · ⏱️ ${eta !== null ? eta + ' min' : '—'} · 🧾 ${(o.order_items || []).length} art.</div>
+      <div class="offer-actions"><button class="btn-small success" onclick="acceptOffer('${o.id}')">✅ ACEPTAR</button><button class="btn-small danger" onclick="rejectOffer('${o.id}')">❌</button></div></div>`;
+  }).join('') || '<p class="empty-state">Sin ofertas nuevas</p>';
 }
 function rejectOffer(id) { rejectedOffers.add(id); loadOffers(); }
 async function acceptOffer(id) {
@@ -46,7 +46,7 @@ async function acceptOffer(id) {
   showToast('✅ Aceptada. Dirección desbloqueada.'); loadDeliveryHub();
 }
 async function loadActiveDelivery() {
-  const { data: o } = await db.from('orders').select('*, restaurants(name, latitude, longitude), profiles(full_name)').eq('driver_id', currentUser.id).eq('status', 'delivering').single();
+  const { data: o } = await db.from('orders').select('*, restaurants(name, latitude, longitude, owner_id), profiles(full_name)').eq('driver_id', currentUser.id).eq('status', 'delivering').single();
   const card = document.getElementById('activeDeliveryCard');
   if (!o) { card.classList.add('hidden'); return; }
   card.classList.remove('hidden'); window._activeOrder = o;
@@ -54,30 +54,32 @@ async function loadActiveDelivery() {
   const pick = `https://www.google.com/maps/dir/?api=1&destination=${o.restaurants?.latitude || ''},${o.restaurants?.longitude || ''}`;
   const dest = `https://www.google.com/maps/dir/?api=1&destination=${o.customer_lat || ''},${o.customer_lng || ''}`;
   document.getElementById('deliverySteps').innerHTML = `
-    <div class="step ${pk ? 'done' : 'current'}">1️⃣ Ir al negocio: <b>${o.restaurants?.name}</b><a class="btn-small step-btn" target="_blank" href="${pick}">🗺️ Navegar</a></div>
-    <div class="step ${pk ? 'done' : ''}">2️⃣ Recoger el pedido embalado</div>
+    <div class="step ${pk ? 'done' : 'current'}">1️⃣ Ir al negocio: <b>${o.restaurants?.name}</b><a class="btn-small step-btn" target="_blank" href="${pick}">🗺️</a></div>
+    <div class="step ${pk ? 'done' : ''}">2️⃣ Recoger el pedido</div>
     <div class="step ${pk ? 'done' : 'current'}">3️⃣ Confirmar recogida${!pk ? `<button class="btn-small success step-btn" onclick="confirmPickup('${o.id}')">Confirmar</button>` : ''}</div>
-    <div class="step ${pk ? 'current' : ''}">4️⃣ Ir al destino: <b>${o.delivery_address}</b><a class="btn-small step-btn" target="_blank" href="${dest}">🗺️ Navegar</a></div>
-    <div class="step">5️⃣ Pide el 🔐 código al cliente y toma foto</div>
-    <div class="step">6️⃣ Confirma abajo con el código</div>`;
+    <div class="step ${pk ? 'current' : ''}">4️⃣ Ir al destino: <b>${o.delivery_address}</b><a class="btn-small step-btn" target="_blank" href="${dest}">🗺️</a></div>
+    <div class="step">5️⃣ Pide el 🔐 código y toma foto</div>
+    <div class="step">6️⃣ Confirma abajo</div>`;
 }
 async function confirmPickup(id) { await db.from('orders').update({ pickup_confirmed: true }).eq('id', id); showToast('📦 Recogida confirmada'); loadActiveDelivery(); }
 async function confirmDelivery() {
   const o = window._activeOrder;
   if (!o) { showToast('No tienes entrega activa'); return; }
   const code = document.getElementById('codeInput').value.trim();
-  if (code !== o.delivery_code) { showToast('❌ Código incorrecto. Pídeselo al cliente.'); navigator.vibrate?.(300); return; }
+  if (code !== o.delivery_code) { showToast('❌ Código incorrecto'); navigator.vibrate?.(300); return; }
   let proof = null;
   const f = document.getElementById('proofPhoto').files[0];
-  if (f) { const path = 'proofs/' + o.id + '_' + Date.now() + '.jpg'; const { error } = await db.storage.from('fendyx-assets').upload(path, f); if (!error) proof = db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl; }
+  if (f) { const path = 'proofs/' + o.id + '_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(path, f); if (!r.error) proof = db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl; }
   const pos = await getPos();
-  const earn = parseFloat((parseFloat(o.total) * 0.85).toFixed(2));
-  await db.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString(), proof_photo_url: proof, delivery_lat: pos?.lat || null, delivery_lng: pos?.lng || null, driver_earning: earn }).eq('id', o.id);
+  const gain = driverGain(o.total);
+  const restShare = parseFloat((o.total * 0.70).toFixed(2));
+  await db.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString(), proof_photo_url: proof, delivery_lat: pos?.lat || null, delivery_lng: pos?.lng || null, driver_earning: gain }).eq('id', o.id);
   await db.from('profiles').update({ completed_deliveries: (currentProfile.completed_deliveries || 0) + 1 }).eq('id', currentUser.id);
   currentProfile.completed_deliveries = (currentProfile.completed_deliveries || 0) + 1;
-  await addTokens(earn, 'Ganancia entrega #' + o.id.slice(0, 4));
+  await addTokens(gain, 'Ganancia entrega #' + o.id.slice(0, 4));
+  if (o.restaurants?.owner_id) await db.rpc('credit_tokens', { p_to: o.restaurants.owner_id, p_amount: restShare, p_desc: 'Venta pedido #' + o.id.slice(0, 4) });
   document.getElementById('codeInput').value = '';
-  showToast('✅ Entrega confirmada. Ganaste ◈ ' + earn.toFixed(2));
+  showToast('✅ Entregado. Ganaste ◈ ' + gain.toFixed(2) + ' · Restaurante ◈ ' + restShare.toFixed(2));
   loadDeliveryHub();
 }
 async function loadEarnings() {
@@ -94,8 +96,8 @@ async function loadEarnings() {
   document.getElementById('earnBalance').textContent = parseFloat(currentProfile.tokens_balance || 0).toFixed(2);
   const { data: w } = await db.from('withdrawals').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
   document.getElementById('withdrawalsList').innerHTML = (w || []).map(x =>
-    `<div class="row-item"><div class="row-main"><b>◈ ${x.amount}</b><small>${x.method} · ${new Date(x.created_at).toLocaleDateString()}</small></div><span class="order-status ${x.status === 'pending' ? 'st-pending' : 'st-delivered'}">${x.status === 'pending' ? 'Pendiente' : 'Aprobado'}</span></div>`).join('')
-    || '<p class="empty-state">Sin retiros solicitados</p>';
+    `<div class="row-item"><div class="row-main"><b>◈ ${x.amount}</b><small>${x.method} · ${new Date(x.created_at).toLocaleDateString()}</small></div><span class="order-status ${x.status === 'pending' ? 'st-pending' : 'st-delivered'}">${x.status}</span></div>`).join('')
+    || '<p class="empty-state">Sin retiros</p>';
 }
 async function requestWithdrawal() {
   const amount = parseFloat(document.getElementById('withdrawAmount').value);
@@ -104,7 +106,7 @@ async function requestWithdrawal() {
   await db.from('withdrawals').insert({ user_id: currentUser.id, amount, method: document.getElementById('withdrawMethod').value });
   await deductTokens(amount, 'Solicitud de retiro');
   document.getElementById('withdrawAmount').value = '';
-  showToast('🏦 Retiro solicitado. El admin lo procesará.'); loadEarnings();
+  showToast('🏦 Retiro solicitado'); loadEarnings();
 }
 async function loadReputation() {
   const p = currentProfile;
@@ -114,5 +116,5 @@ async function loadReputation() {
   const cats = {};
   (data || []).forEach(r => { (cats[r.category] = cats[r.category] || []).push(r.score); });
   document.getElementById('repBreakdown').innerHTML = Object.entries(cats).map(([c, a]) =>
-    `<span class="chip">${c}: ${(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1)} ⭐</span>`).join('') || '<span class="chip">Aún sin calificaciones</span>';
+    `<span class="chip">${c}: ${(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1)} ⭐</span>`).join('') || '<span class="chip">Sin calificaciones</span>';
 }

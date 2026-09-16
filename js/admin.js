@@ -3,6 +3,7 @@ let adminUsersCache = [], kycTarget = null;
 
 async function loadAdmin() {
   if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; }
+  startSafetyRealtime();
   loadAdminOverview();
 }
 function switchAdminTab(tab, btn) {
@@ -10,9 +11,17 @@ function switchAdminTab(tab, btn) {
   btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('admin-' + tab)?.classList.add('active');
-  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests };
+  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety };
   loaders[tab]?.();
 }
+function startSafetyRealtime() {
+  if (window._safetyCh) return;
+  window._safetyCh = db.channel('fendyx-safety')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
+    .subscribe();
+}
+
 async function loadAdminOverview() {
   const [u, o, c, tx] = await Promise.all([
     db.from('profiles').select('tokens_balance'),
@@ -43,7 +52,7 @@ async function saveAppName() {
   await loadBranding(); showToast('✅ Nombre actualizado: ' + name);
 }
 
-// ===== USUARIOS: ROL, PASS, BAN, VERIFY =====
+// ===== USUARIOS =====
 async function loadAdminUsers() {
   if (!document.getElementById('adminPassLog')) {
     document.getElementById('admin-users').insertAdjacentHTML('beforeend',
@@ -92,8 +101,7 @@ async function changeUserPass(email) {
   if (np !== np2) { showToast('❌ No coinciden'); return; }
   const { data: res, error } = await db.rpc('admin_reset_password', { p_email: email, p_new: np });
   if (error || (res && res.startsWith('ERROR'))) { showToast('❌ ' + (res || error.message)); return; }
-  showToast('✅ Contraseña cambiada. Avísale por WhatsApp.');
-  loadPassLog();
+  showToast('✅ Contraseña cambiada'); loadPassLog();
 }
 async function tempPass(email) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -129,7 +137,42 @@ async function toggleBan(id, ban) {
   showToast(ban ? '🚫 Baneado con razón' : '✅ Desbaneado'); loadAdminUsers();
 }
 
-// ===== RECARGAS: VERIFICACIÓN MANUAL / BOT BINANCE =====
+// ===== 🚨 CENTRO DE SEGURIDAD: PÁNICO + REPORTES =====
+async function loadSafety() {
+  const { data: panics } = await db.from('panic_alerts').select('*, profiles(email, full_name)').order('created_at', { ascending: false }).limit(20);
+  document.getElementById('panicList').innerHTML = (panics || []).map(p =>
+    `<div class="row-item"><div class="row-main"><b>🆘 ${p.profiles?.full_name || '—'}</b>
+     <small>${p.profiles?.email} · contexto: ${p.context} · ${new Date(p.created_at).toLocaleString('es')}</small>
+     ${p.latitude ? `<a class="btn-small" target="_blank" href="https://www.google.com/maps?q=${p.latitude},${p.longitude}">🗺️ Ver ubicación en vivo</a>` : '<small>sin GPS</small>'}</div>
+     <div class="row-actions">
+       ${p.status === 'active' ? `<button class="btn-small success" onclick="resolvePanic('${p.id}')">✅ Resolver</button>` : '<span class="order-status st-delivered">Resuelta</span>'}
+       <button class="btn-small danger" onclick="toggleBan('${p.user_id}',true)">🚫</button>
+     </div></div>`).join('')
+    || '<p class="empty-state">Sin alertas de pánico 🎉</p>';
+
+  const { data: reps } = await db.from('reports').select('*, messages(content), target:profiles!reports_target_user_id_fkey(email, full_name), reporter:profiles!reports_reporter_id_fkey(email)').order('created_at', { ascending: false }).limit(30);
+  document.getElementById('reportsList').innerHTML = (reps || []).map(r =>
+    `<div class="row-item"><div class="row-main"><b>${r.auto_flag ? '🤖 Auto-moderación' : '🚩 Reporte manual'}</b>
+     <small>Objetivo: ${r.target?.email || '—'} · Denunciante: ${r.reporter?.email || 'sistema'} · ${new Date(r.created_at).toLocaleString('es')}</small>
+     <div class="dim">${r.detail || ''}</div>
+     ${r.messages?.content ? `<div class="dim">💬 Mensaje: "…${r.messages.content}…"</div>` : ''}</div>
+     <div class="row-actions">
+       ${r.status === 'open' ? `<button class="btn-small" onclick="closeReport('${r.id}')">Descartar</button>` : '<span class="order-status st-delivered">Cerrado</span>'}
+       ${r.target_user_id ? `<button class="btn-small danger" onclick="toggleBan('${r.target_user_id}',true)">🚫 Banear</button>` : ''}
+     </div></div>`).join('')
+    || '<p class="empty-state">Sin reportes 🎉</p>';
+}
+async function resolvePanic(id) {
+  await db.from('panic_alerts').update({ status: 'resolved' }).eq('id', id);
+  await db.rpc('log_admin_action', { p_action: 'panic_resolve', p_target: id, p_detail: 'Alerta atendida' });
+  showToast('✅ Alerta marcada como resuelta'); loadSafety();
+}
+async function closeReport(id) {
+  await db.from('reports').update({ status: 'closed' }).eq('id', id);
+  showToast('Reporte descartado'); loadSafety();
+}
+
+// ===== RECARGAS =====
 async function loadRechargeRequests() {
   const { data } = await db.from('recharge_requests').select('*, profiles(email, full_name)').order('created_at', { ascending: false });
   const pend = (data || []).filter(r => r.status === 'pending');
@@ -148,8 +191,7 @@ async function approveRecharge(id) {
   if (!r || r.status !== 'pending') return;
   if (!confirm('Confirma que recibiste ◈ ' + r.amount + ' (' + r.method + ', ref ' + (r.reference || '—') + ') de ' + r.profiles?.email + '. ¿Aprobar?')) return;
   await db.rpc('credit_tokens', { p_to: r.user_id, p_amount: parseFloat(r.amount), p_desc: 'Recarga verificada (' + r.method + ')' });
-  const updates = { status: 'approved', verified_by: 'manual' };
-  await db.from('recharge_requests').update(updates).eq('id', id);
+  await db.from('recharge_requests').update({ status: 'approved', verified_by: 'manual' }).eq('id', id);
   if (parseFloat(r.amount) >= 3 && !r.profiles?.is_active) {
     await db.from('profiles').update({ is_active: true }).eq('id', r.user_id);
     await db.rpc('claim_referral_reward', { p_referee: r.user_id });

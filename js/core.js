@@ -3,19 +3,17 @@ let currentUser = null, currentProfile = null, roleDetails = null, myLocation = 
 let cart = { restId: null, items: [] };
 let liveChannel = null;
 const loadedScripts = {};
+const LEVEL_RATES = { 1: 0.2, 2: 0.9, 3: 1.6, 4: 2.3, 5: 3.0 };
 
-// ===== Arranque =====
 document.addEventListener('DOMContentLoaded', async () => {
   await loadBranding();
-  const isApp = !!document.getElementById('screen-app') || !!document.getElementById('section-dashboard');
+  const isApp = !!document.getElementById('section-dashboard');
   const { data: { session } } = await db.auth.getSession();
   if (isApp) {
     if (!session) { location.replace('index.html'); return; }
     currentUser = session.user;
     await enterApp();
-  } else if (session) {
-    location.replace('app.html');
-  }
+  } else if (session) { location.replace('app.html'); }
 });
 
 async function enterApp() {
@@ -24,16 +22,17 @@ async function enterApp() {
     if (!currentProfile) await repairProfile();
     if (!currentProfile) { await db.auth.signOut(); location.replace('index.html'); return; }
     if (currentProfile.is_banned) {
+      localStorage.setItem('fendyx_ban_reason', currentProfile.ban_reason || 'Incumplimiento de normas');
       await db.auth.signOut();
       location.replace('index.html?banned=1');
       return;
     }
+    localStorage.removeItem('fendyx_ban_reason');
     await ensureRoleDetails();
     updateHeader(); loadModules(); showSection('dashboard'); startRealtime();
   } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
 }
 
-// Repara perfiles huérfanos desde el cliente (doble seguro anti-error)
 async function repairProfile() {
   const { data } = await db.from('profiles').select('*').eq('id', currentUser.id).single();
   if (data) { currentProfile = data; return; }
@@ -41,7 +40,7 @@ async function repairProfile() {
   const { data: created, error } = await db.from('profiles').insert({
     id: currentUser.id, email: currentUser.email,
     full_name: meta.full_name || currentUser.email?.split('@')[0] || 'Usuario',
-    role: meta.role || 'user', age: meta.age || null
+    role: meta.role || 'user', age: meta.age || null, gender: meta.gender || null, tokens_balance: 0
   }).select().single();
   if (!error) currentProfile = created;
 }
@@ -60,13 +59,13 @@ async function ensureRoleDetails() {
     user_id: currentUser.id, role_type: currentProfile.role,
     rif: meta.rif || null, business_name: meta.business_name || null, address: meta.address || null,
     license_number: meta.license || null, vehicle_plate: meta.plate || null, vehicle_type: meta.vehicle || null,
-    specialty: meta.specialty || null, rate_per_minute: meta.rate ? parseFloat(meta.rate) : null
+    specialty: meta.specialty || null, bio: meta.bio || null,
+    rate_per_minute: currentProfile.role === 'remote_worker' ? 0.2 : (meta.rate ? parseFloat(meta.rate) : null)
   }).select().single();
   roleDetails = data;
   localStorage.removeItem('fendyx_pending_meta');
 }
 
-// ===== Branding =====
 async function loadBranding() {
   const { data } = await db.from('app_branding').select('*').eq('id', 1).single();
   if (!data) return;
@@ -79,13 +78,14 @@ async function loadBranding() {
   const an = document.getElementById('adminAppName'); if (an && !an.value) an.value = n;
 }
 
-// ===== Header / nav =====
 function updateHeader() {
   if (!currentProfile) return;
-  const t = document.getElementById('userTokens'); if (t) t.textContent = parseFloat(currentProfile.tokens_balance || 0).toFixed(2);
+  const t = document.getElementById('userTokens');
+  if (t) t.textContent = currentProfile.role === 'admin' ? '∞' : parseFloat(currentProfile.tokens_balance || 0).toFixed(2);
   const av = document.getElementById('userAvatar'); if (av) av.textContent = (currentProfile.full_name || 'U').charAt(0).toUpperCase();
   const w = document.getElementById('welcomeName'); if (w) w.textContent = (currentProfile.full_name || 'Usuario').split(' ')[0];
-  const wr = document.getElementById('welcomeRole'); if (wr) wr.textContent = 'Rol: ' + (ROLE_LABELS[currentProfile.role] || 'Usuario');
+  const wr = document.getElementById('welcomeRole');
+  if (wr) wr.textContent = 'Rol: ' + (ROLE_LABELS[currentProfile.role] || 'Usuario') + (currentProfile.is_active ? '' : ' · ⚠️ Cuenta sin activar');
   document.querySelector('.admin-only')?.classList.toggle('hidden', currentProfile.role !== 'admin');
   document.getElementById('btnJoinKyc')?.classList.toggle('hidden', !!currentProfile.is_verified);
 }
@@ -96,22 +96,31 @@ document.addEventListener('click', e => {
 async function handleLogout() { await db.auth.signOut(); location.replace('index.html'); }
 
 function loadModules() {
+  const isWorker = currentProfile.role === 'remote_worker';
   const mods = [
     { id:'map', icon:'📍', n:'Mapa Social' }, { id:'radar', icon:'🌙', n:'Radar Nocturno' },
     { id:'events', icon:'🎪', n:'Eventos' }, { id:'restaurants', icon:'🍽️', n:'Restaurantes' },
     { id:'reservations', icon:'📅', n:'Reservas' }, { id:'orders', icon:'📦', n:'Pedidos' },
-    { id:'remote', icon:'💼', n:'Trabajo Remoto' }, { id:'agenda', icon:'🗓️', n:'Agenda' },
-    { id:'marketplace', icon:'🛒', n:'Marketplace' }, { id:'chat', icon:'💬', n:'Chat' },
-    { id:'tokens', icon:'◈', n:'Tokens' }, { id:'profile', icon:'👤', n:'Mi Perfil' },
-    { id:'profileedit', icon:'✏️', n:'Perfil Pro' }
+    isWorker ? { id:'remote', icon:'💼', n:'Mi Zona de Trabajo' } : { id:'remote', icon:'📹', n:'Videollamada con Chicas' },
+    { id:'agenda', icon:'🗓️', n:'Agenda' }, { id:'marketplace', icon:'🛒', n:'Marketplace' },
+    { id:'chat', icon:'💬', n:'Chat' }, { id:'tokens', icon:'◈', n:'Tokens' },
+    { id:'profile', icon:'👤', n:'Mi Perfil' }, { id:'profileedit', icon:'✏️', n:'Perfil Pro' }
   ];
+  if (isWorker && currentProfile.worker_status !== 'active') mods.unshift({ id:'remote', icon:'🪪', n:'Verificación Obligatoria' });
   if (currentProfile.role === 'delivery') mods.splice(6, 0, { id:'delivery', icon:'🛵', n:'Zona Domiciliario' });
   if (currentProfile.role === 'admin') mods.unshift({ id:'admin', icon:'🛡️', n:'Panel Admin' });
   document.getElementById('modulesGrid').innerHTML = mods.map(m =>
     `<div class="module-card" onclick="showSection('${m.id}')"><span class="icon">${m.icon}</span><h3>${m.n}</h3></div>`).join('');
+  const old = document.getElementById('activateBanner'); if (old) old.remove();
+  if (!currentProfile.is_active) {
+    document.getElementById('modulesGrid').insertAdjacentHTML('beforebegin',
+      `<div class="welcome-banner" id="activateBanner" style="border-color:var(--warning)">
+        <h2 style="font-size:1.1rem">⚠️ Activa tu cuenta</h2>
+        <p>Recarga mínima de <b>$3</b> para desbloquear llamadas, pedidos y compras.</p>
+        <button class="btn-primary" style="margin-top:10px" onclick="showSection('tokens')">Activar ahora</button></div>`);
+  }
 }
 
-// ===== Navegación con carga perezosa de módulos =====
 const MODULE_FILES = {
   map:'map.js', radar:'radar.js', events:'radar.js', restaurants:'restaurants.js', reservations:'restaurants.js',
   orders:'orders.js', delivery:'delivery.js', remote:'remote.js', agenda:'remote.js',
@@ -143,7 +152,6 @@ async function showSection(name) {
   if (LOADERS[name]) { try { await LOADERS[name](); } catch (e) { console.error(e); } }
 }
 
-// ===== Utils compartidas =====
 function haversine(a, b, c, d) {
   const R = 6371000, t = x => x * Math.PI / 180;
   const dLa = t(c - a), dLo = t(d - b);
@@ -162,20 +170,25 @@ function showToast(msg) {
   t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(window._tt); window._tt = setTimeout(() => t.classList.add('hidden'), 2800);
 }
+function requireActive() {
+  if (currentProfile.role === 'admin') return true;
+  if (!currentProfile.is_active) { showToast('⚠️ Activa tu cuenta con una recarga mínima de $3'); showSection('tokens'); return false; }
+  return true;
+}
 async function deductTokens(amount, desc) {
+  if (currentProfile.role === 'admin') return; // Admin ilimitado
   const nb = parseFloat(currentProfile.tokens_balance) - amount;
   await db.from('profiles').update({ tokens_balance: nb }).eq('id', currentUser.id);
   await db.from('token_transactions').insert({ user_id: currentUser.id, amount: -amount, type: 'consumption', description: desc });
   currentProfile.tokens_balance = nb; updateHeader();
 }
-async function addTokens(amount, desc) {
-  const nb = parseFloat(currentProfile.tokens_balance) + amount;
+async function addTokens(amount, desc, type) {
+  const nb = parseFloat(currentProfile.tokens_balance || 0) + amount;
   await db.from('profiles').update({ tokens_balance: nb }).eq('id', currentUser.id);
-  await db.from('token_transactions').insert({ user_id: currentUser.id, amount, type: 'transfer', description: desc });
+  await db.from('token_transactions').insert({ user_id: currentUser.id, amount, type: type || 'transfer', description: desc });
   currentProfile.tokens_balance = nb; updateHeader();
 }
 
-// ===== Tiempo real =====
 function startRealtime() {
   if (liveChannel) return;
   liveChannel = db.channel('fendyx-live')

@@ -171,11 +171,11 @@
     <div id="workersGrid" class="cards-grid"></div>
     <div id="workerPanel" class="owner-panel hidden">
       <h3>⚙️ Mi perfil profesional</h3>
+      <p id="workerLevelInfo" class="dim"></p>
       <form class="owner-form" onsubmit="saveWorkerProfile(event)">
         <input type="text" id="workerSpecialty" placeholder="Especialidad" required>
-        <input type="number" id="workerRate" placeholder="Tarifa/min (tokens)" step="0.1" min="0.1" required>
         <textarea id="workerBio" placeholder="Describe tus servicios"></textarea>
-        <label class="check-line"><input type="checkbox" id="workerOnline"> Disponible</label>
+        <label class="check-line"><input type="checkbox" id="workerOnline"> Disponible para llamadas</label>
         <button type="submit" class="btn-primary">Guardar</button>
       </form>
       <h3>📞 Llamadas hacia mí</h3>
@@ -258,13 +258,13 @@
 
   <section id="section-profileedit" class="app-section">
     <div class="section-header"><h2>✏️ Perfil Pro</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
+    <button type="button" class="btn-secondary hidden" id="btnJoinKyc" onclick="joinKycRoom()" style="margin-bottom:12px">🎥 Unirme a verificación KYC</button>
     <form class="owner-panel owner-form" onsubmit="saveProfilePro(event)">
       <input type="text" id="proName" placeholder="Nombre">
       <textarea id="proBio" placeholder="Bio"></textarea>
-      <input type="text" id="proInterests" placeholder="Intereses (coma): música, cine, gym">
-      <label class="dim">Foto de perfil</label><input type="file" id="proAvatar" accept="image/*">
-      <label class="dim">Galería (varias)</label><input type="file" id="proGallery" accept="image/*" multiple>
-      <button type="button" class="btn-secondary hidden" id="btnJoinKyc" onclick="joinKycRoom()">🎥 Unirme a verificación KYC</button>
+      <input type="text" id="proInterests" placeholder="Intereses (coma)">
+      <input type="file" id="proAvatar" accept="image/*">
+      <input type="file" id="proGallery" accept="image/*" multiple>
       <button type="submit" class="btn-primary">Guardar</button>
     </form>
   </section>
@@ -338,12 +338,12 @@
 </nav>
 
 <div id="modal-recharge" class="modal hidden"><div class="modal-content">
-  <h3>◈ Recargar</h3><p class="dim">1 Token = $1 USD</p>
+  <h3>◈ Recargar</h3><p class="dim">1 Token = $1 USD · Mínimo 3</p>
   <div class="recharge-options">
-    <button onclick="processRecharge(5)">5<br><small>$5</small></button><button onclick="processRecharge(10)">10<br><small>$10</small></button>
-    <button onclick="processRecharge(25)">25<br><small>$25</small></button><button onclick="processRecharge(50)">50<br><small>$50</small></button>
+    <button onclick="processRecharge(3)">3<br><small>$3</small></button><button onclick="processRecharge(5)">5<br><small>$5</small></button>
+    <button onclick="processRecharge(10)">10<br><small>$10</small></button><button onclick="processRecharge(25)">25<br><small>$25</small></button>
   </div>
-  <input type="number" id="customRecharge" placeholder="Cantidad" min="1">
+  <input type="number" id="customRecharge" placeholder="Cantidad (mín 3)" min="3">
   <button class="btn-primary" onclick="processRecharge(document.getElementById('customRecharge').value)">Recargar</button>
   <button class="btn-secondary" onclick="closeModal('modal-recharge')">Cancelar</button>
 </div></div>
@@ -370,9 +370,9 @@
     <div class="rep-stars" id="upRating">★★★★★</div>
   </div>
   <p id="upBio" class="dim"></p>
-  <h4 class="sub-title">🎯 Intereses</h4><div id="upInterests" class="chips-row"></div>
-  <h4 class="sub-title">📸 Galería</h4><div id="upGallery" class="gallery-grid"></div>
-  <button class="btn-primary" onclick="messageFromProfile()">💬 Enviar mensaje</button>
+  <h4 class="sub-title">🎯 Intereses y 💫 preferencias</h4><div id="upInterests" class="chips-row"></div>
+  <h4 class="sub-title">📸 Fotos públicas</h4><div id="upGallery" class="gallery-grid"></div>
+  <div id="upActions" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
 </div></div>
 
 <div id="modal-reserve" class="modal hidden"><div class="modal-content">

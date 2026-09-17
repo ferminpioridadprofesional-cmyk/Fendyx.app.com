@@ -1,6 +1,15 @@
 'use strict';
 let adminUsersCache = [], kycTarget = null;
 
+// Fuente de verdad de niveles (con campo level correcto)
+const LEVELS = [
+  { level: 1, ico: '🥉', name: 'Bronce', rate: 0.2 },
+  { level: 2, ico: '🥈', name: 'Plata', rate: 0.7 },
+  { level: 3, ico: '🥇', name: 'Oro', rate: 1.2 },
+  { level: 4, ico: '💠', name: 'Platino', rate: 2.0 },
+  { level: 5, ico: '💎', name: 'Diamante', rate: 3.0 }
+];
+
 async function loadAdmin() {
   if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; }
   startSafetyRealtime();
@@ -145,7 +154,7 @@ async function openUserFile(id) {
       <b>Género:</b> ${u.gender || '—'} · <b>Edad:</b> ${u.age || '—'}<br>
       <b>WhatsApp:</b> ${u.whatsapp ? `<a target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">${u.whatsapp}</a>` : '—'}<br>
       <b>Rol:</b> ${ROLE_LABELS[u.role]} · <b>KYC:</b> ${u.kyc_status} · <b>Verificado:</b> ${u.is_verified ? 'Sí' : 'No'}<br>
-      ${u.role === 'remote_worker' ? `<b>Nivel:</b> ${levelBadge(lvNum)} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || levelInfo(lvNum).rate}/min<br>` : ''}
+      ${u.role === 'remote_worker' ? `<b>Nivel:</b> ${levelBadge(lvNum)} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || LEVELS[lvNum - 1].rate}/min<br>` : ''}
       <b>Ocupación:</b> ${u.occupation || '—'} · <b>Zodiaco:</b> ${u.zodiac || '—'}<br>
       <b>Especialidad:</b> ${d.specialty || '—'}<br>
       <b>Intereses:</b> ${(u.interests || []).join(', ') || '—'}<br>
@@ -330,19 +339,17 @@ async function startKyc(userId, name) {
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); showToast('✅ Verificada'); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
-// TRABAJADORAS: nivel con icono distintivo + actualización en tiempo real (vía core)
+// ===== TRABAJADORAS: selector de nivel CORREGIDO (1–5 con value numérico) =====
 async function loadWorkersAdmin() {
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
-  let lv = Object.values(LEVEL_META);
-  try { const r = await db.from('worker_levels').select('*').order('level'); if (r.data && r.data.length) lv = r.data; } catch (e) {}
   document.getElementById('adminWorkersList').innerHTML = (data || []).map(w => {
     const rd = w.role_details?.[0];
     const cur = Math.min(5, Math.max(1, parseInt(rd?.worker_level) || 1));
-    const curRate = parseFloat(rd?.rate_per_minute) || levelInfo(cur).rate;
+    const curRate = parseFloat(rd?.rate_per_minute) || LEVELS[cur - 1].rate;
     return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>Real: ${w.full_name} · ${levelBadge(cur)} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
      <div class="row-actions">
        <select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">
-         ${lv.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.name} ($${l.rate})</option>`).join('')}
+         ${LEVELS.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.ico} ${l.name} ($${l.rate})</option>`).join('')}
        </select>
        <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
        <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button>
@@ -350,10 +357,13 @@ async function loadWorkersAdmin() {
   }).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
 async function setWorkerLevel(id, level) {
-  let lvl = LEVEL_META[parseInt(level)] || LEVEL_META[1];
-  try { const r = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single(); if (r.data) lvl = r.data; } catch (e) {}
+  const lv = parseInt(level, 10);
+  const lvl = LEVELS.find(x => x.level === lv);
+  if (!lvl) { showToast('❌ Nivel inválido'); return; }
   await db.from('role_details').update({ worker_level: lvl.level, rate_per_minute: lvl.rate }).eq('user_id', id);
-  showToast('✅ ' + lvl.name); loadWorkersAdmin();
+  await db.rpc('log_admin_action', { p_action: 'level_change', p_target: id, p_detail: 'Nivel ' + lvl.name });
+  showToast('✅ Nivel ' + lvl.ico + ' ' + lvl.name + ' (◈ ' + lvl.rate + '/min)');
+  loadWorkersAdmin();
 }
 async function setWorkerRate(id) {
   const rate = parseFloat(document.getElementById('rate_' + id).value);

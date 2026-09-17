@@ -1,5 +1,6 @@
 'use strict';
 let _girlsList = [];
+let wkLbUrls = [], wkLbIdx = 0, wkLbX = 0;
 const _we = { interests: new Set(), preferences: new Set(), zodiac: null };
 function toggleWChip(el, g, v) { const s = _we[g]; if (s.has(v)) { s.delete(v); el.classList.remove('active'); } else { s.add(v); el.classList.add('active'); } }
 function pickWZodiac(el, v) { _we.zodiac = v; document.querySelectorAll('.wz-chip').forEach(z => z.classList.remove('active')); el.classList.add('active'); }
@@ -16,6 +17,13 @@ function injectGirlStyle() {
     .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
     .girl-thumbs img{width:52px;height:52px;object-fit:cover;object-position:center;border-radius:9px;border:1px solid var(--border);cursor:pointer}
     .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+    .pf-hero{display:flex;gap:14px;align-items:center;margin-bottom:12px;position:relative}
+    .pf-hero img,.pf-hero-letter{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:pointer}
+    .pf-hero-letter{background:var(--gradient);color:#04060c;display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:900}
+    .pf-meta{flex:1;text-align:left}
+    .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
+    .pf-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+    .pf-gallery img{width:100%;height:110px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer}
     .wk-card{padding:18px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:center}
     .wk-name{font-family:'Orbitron';font-weight:900;font-size:1.3rem;margin-bottom:8px}
     .wk-row{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
@@ -34,14 +42,71 @@ function injectGirlStyle() {
     .wk-pro{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:12px}`;
   document.head.appendChild(st);
 }
-// Wrappers que garantizan que profile.js (lightbox + perfil) esté cargado
-async function openWorkerProfile(id) { await loadScript('profile.js'); viewWorkerProfile(id, false); }
-async function previewWorkerProfile() { await loadScript('profile.js'); viewWorkerProfile(currentUser.id, true); }
+
+// ===== VISOR DE FOTOS PROPIO (pantalla completa + deslizar) =====
+function ensureWkLightbox() {
+  if (document.getElementById('wkLightbox')) return;
+  const lb = document.createElement('div'); lb.id = 'wkLightbox'; lb.className = 'lb-wrap hidden'; document.body.appendChild(lb);
+  lb.addEventListener('touchstart', e => { wkLbX = e.touches[0].clientX; });
+  lb.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - wkLbX; if (dx > 50) wkLbStep(-1); else if (dx < -50) wkLbStep(1); });
+}
+function wkOpenLightbox(urls, idx) {
+  ensureWkLightbox();
+  wkLbUrls = urls || []; wkLbIdx = idx || 0;
+  const lb = document.getElementById('wkLightbox');
+  lb.innerHTML = `<button class="lb-close" onclick="wkCloseLightbox()">✕</button>
+    <button class="lb-btn lb-prev" onclick="wkLbStep(-1)">‹</button>
+    <img src="${wkLbUrls[wkLbIdx] || ''}">
+    <button class="lb-btn lb-next" onclick="wkLbStep(1)">›</button>
+    <div class="lb-dots">${wkLbUrls.map((_, i) => `<span class="${i === wkLbIdx ? 'on' : ''}"></span>`).join('')}</div>`;
+  lb.classList.remove('hidden');
+}
+function wkLbStep(d) { wkLbIdx = (wkLbIdx + d + wkLbUrls.length) % wkLbUrls.length; wkOpenLightbox(wkLbUrls, wkLbIdx); }
+function wkCloseLightbox() { document.getElementById('wkLightbox')?.classList.add('hidden'); }
+
+// ===== MODAL DE PERFIL DE MODELO PROPIO =====
+function ensureWkModal() {
+  if (document.getElementById('wkProfileModal')) return;
+  const m = document.createElement('div'); m.id = 'wkProfileModal'; m.className = 'modal hidden';
+  m.innerHTML = `<div class="modal-content wide" id="wkModalContent"></div>`;
+  document.body.appendChild(m);
+}
+function renderWkProfile(data, preview) {
+  ensureWkModal(); injectGirlStyle();
+  const rd = data.role_details?.[0];
+  const lv = Math.min(5, Math.max(1, parseInt(rd?.worker_level) || 1));
+  const name = data.model_name || 'Modelo';
+  const photos = (data.worker_gallery || []).slice(0, 5);
+  const rate = rd?.rate_per_minute != null ? rd.rate_per_minute : levelInfo(lv).rate;
+  const box = document.getElementById('wkModalContent');
+  box.className = 'modal-content wide tier-' + lv;
+  box.innerHTML = `
+    <div class="modal-head"><h3>${name}</h3><button class="modal-close" onclick="closeModal('wkProfileModal')">✕</button></div>
+    <div class="pf-hero">
+      ${(data.avatar_url || photos[0]) ? `<img src="${data.avatar_url || photos[0]}" onclick='wkOpenLightbox(${JSON.stringify(photos.length ? photos : [data.avatar_url])},0)'>` : `<div class="pf-hero-letter">${name.charAt(0).toUpperCase()}</div>`}
+      <div class="pf-meta"><b>${name}${data.age ? ' · ' + data.age : ''}</b>${levelBadge(lv)}
+        <div style="margin-top:6px">◈ ${rate}/min · ${stars(data.rating || 5)}</div>
+        ${data.zodiac ? `<div class="dim">${data.zodiac}</div>` : ''}</div>
+    </div>
+    <p class="dim">${data.bio || rd?.bio || ''}</p>
+    <div class="chips-row">${(data.interests || []).map(i => `<span class="chip active">🎯 ${i}</span>`).join('')}${(data.preferences || []).map(i => `<span class="chip">💫 ${i}</span>`).join('')}</div>
+    <h4 class="sub-title">📸 Galería</h4>
+    <div class="pf-gallery">${photos.map((u, i) => `<img src="${u}" onclick='wkOpenLightbox(${JSON.stringify(photos)},${i})'>`).join('') || '<p class="dim">Sin fotos</p>'}</div>
+    <div style="margin-top:12px">${preview ? '<p class="dim">Vista previa (solo lectura)</p>' : `<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${rate})">📹 Llamar · ◈ ${rate}/min</button>`}</div>`;
+  openModal('wkProfileModal');
+}
+async function openWorkerProfile(id) {
+  const { data } = await db.from('profiles').select('*, role_details(*)').eq('id', id).single();
+  if (!data) return;
+  renderWkProfile(data, false);
+}
+async function previewWorkerProfile() {
+  renderWkProfile(Object.assign({}, currentProfile, { role_details: roleDetails ? [roleDetails] : [] }), true);
+}
 async function openGirlGallery(idx, i) {
   const g = (_girlsList[idx]?.gallery) || [];
   if (!g.length) return;
-  if (typeof openLightbox !== 'function') await loadScript('profile.js');
-  openLightbox(g, i);
+  wkOpenLightbox(g, i);
 }
 
 function girlCard(w, idx) {
@@ -72,7 +137,6 @@ async function fetchPublicWorkers() {
 async function loadGirls() {
   if (!requireActive()) return;
   injectGirlStyle();
-  await loadScript('profile.js');
   _girlsList = await fetchPublicWorkers();
   document.getElementById('girlsGrid').innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
 }
@@ -83,7 +147,6 @@ async function loadWorkers() {
   const panel = document.getElementById('workerPanel');
   if (isWorker) {
     injectGirlStyle();
-    await loadScript('profile.js');
     grid.style.display = 'none'; grid.innerHTML = '';
     panel.classList.remove('hidden');
     const p = currentProfile;
@@ -124,7 +187,6 @@ async function loadWorkers() {
     return;
   }
   injectGirlStyle();
-  await loadScript('profile.js');
   grid.style.display = '';
   panel.classList.add('hidden');
   _girlsList = await fetchPublicWorkers();

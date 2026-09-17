@@ -34,7 +34,15 @@ function injectGirlStyle() {
     .wk-pro{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:12px}`;
   document.head.appendChild(st);
 }
-function openGirlGallery(idx, i) { const g = (_girlsList[idx]?.gallery) || []; if (g.length) openLightbox(g, i); }
+// Wrappers que garantizan que profile.js (lightbox + perfil) esté cargado
+async function openWorkerProfile(id) { await loadScript('profile.js'); viewWorkerProfile(id, false); }
+async function previewWorkerProfile() { await loadScript('profile.js'); viewWorkerProfile(currentUser.id, true); }
+async function openGirlGallery(idx, i) {
+  const g = (_girlsList[idx]?.gallery) || [];
+  if (!g.length) return;
+  if (typeof openLightbox !== 'function') await loadScript('profile.js');
+  openLightbox(g, i);
+}
 
 function girlCard(w, idx) {
   const lvNum = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
@@ -51,7 +59,7 @@ function girlCard(w, idx) {
     <div class="card-desc">${w.occupation || ''}</div>
     <div class="chips-row" style="margin:6px 0">${(w.interests || []).slice(0, 3).map(i => `<span class="chip">🎯 ${i}</span>`).join('')}</div>
     <div class="row-actions">
-      <button class="btn-small" onclick="viewWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button>
+      <button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button>
       <button class="btn-small success" onclick="startCall('${w.id}',${rate})" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button>
     </div>
   </div>`;
@@ -64,6 +72,7 @@ async function fetchPublicWorkers() {
 async function loadGirls() {
   if (!requireActive()) return;
   injectGirlStyle();
+  await loadScript('profile.js');
   _girlsList = await fetchPublicWorkers();
   document.getElementById('girlsGrid').innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
 }
@@ -74,6 +83,7 @@ async function loadWorkers() {
   const panel = document.getElementById('workerPanel');
   if (isWorker) {
     injectGirlStyle();
+    await loadScript('profile.js');
     grid.style.display = 'none'; grid.innerHTML = '';
     panel.classList.remove('hidden');
     const p = currentProfile;
@@ -114,12 +124,12 @@ async function loadWorkers() {
     return;
   }
   injectGirlStyle();
+  await loadScript('profile.js');
   grid.style.display = '';
   panel.classList.add('hidden');
   _girlsList = await fetchPublicWorkers();
   grid.innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
-async function previewWorkerProfile() { await viewWorkerProfile(currentUser.id, true); }
 async function saveWorkerPro(e) {
   e.preventDefault();
   const p = currentProfile;
@@ -156,11 +166,7 @@ async function submitKycDocs(e) {
 }
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
-  // Verificación obligatoria para llamar (salvo admin)
-  if (currentProfile.role !== 'admin' && currentProfile.kyc_status !== 'approved') {
-    showToast('🪪 Verifica tu identidad (cédula + rostro) en Mi Perfil para llamar');
-    showSection('profile'); return;
-  }
+  if (currentProfile.role !== 'admin' && currentProfile.kyc_status !== 'approved') { showToast('🪪 Verifica tu identidad (cédula + rostro) en Mi Perfil para llamar'); showSection('profile'); return; }
   rate = parseFloat(rate) || 0.2;
   const { data: wk } = await db.from('profiles').select('is_online, kyc_status').eq('id', workerId).single();
   if (!wk || wk.kyc_status !== 'approved') { showToast('❌ No verificada'); return; }

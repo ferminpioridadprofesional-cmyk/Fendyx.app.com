@@ -3,19 +3,22 @@ let pc = null, localStream = null, callChannel = null, callRoom = null;
 let callSeconds = 0, callClock = null, callCostTotal = 0, callRowId = null, callRate = 0, iAmClientFlag = false, isInitiatorFlag = false;
 let callSetupDone = false, facingMode = 'user';
 let offerSent = false, pendingCandidates = [], reconnectAttempts = 0, currentPolicy = 'all';
+let peerPresent = false, gotAnswer = false, gotOffer = false;
+let helloTimer = null, ackTimer = null, offerTimer = null;
 let micOn = true, camOn = true;
 
-// STUN + TURN (UDP, TCP y TLS) para atravesar CGNAT/firewalls de VE
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
   { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443'], username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: ['turn:relay.backups.cz:3478', 'turn:relay.backups.cz:5349?transport=tcp', 'turns:relay.backups.cz:5349'], username: 'webrtc', credential: 'webrtc' }
 ];
-// Escalera: normal → forzar relay(TCP/TLS) → normal → relay… (el relay cruza UDP bloqueado)
 const LADDER = ['all', 'relay', 'all', 'relay'];
 
 function setStatus(t) { const m = document.getElementById('callStatusMsg'); if (m) m.textContent = t; }
+function clearHello() { if (helloTimer) { clearInterval(helloTimer); helloTimer = null; } }
+function clearAck() { if (ackTimer) { clearInterval(ackTimer); ackTimer = null; } }
+function clearOffer() { if (offerTimer) { clearInterval(offerTimer); offerTimer = null; } }
 
 function ensureCallUI() {
   if (document.getElementById('fendyx-call-style')) return;
@@ -69,10 +72,10 @@ function playRemoteNow() { const rv = document.getElementById('remoteVideo'); if
 
 async function showIncomingCall(row) {
   ensureCallUI();
-  const { data: caller } = await db.from('profiles').select('full_name').eq('id', row.client_id).single();
+  const { data: caller } = await db.from('profiles').select('full_name, model_name').eq('id', row.client_id).single();
   const box = document.getElementById('incomingCall'); if (!box) return;
   box.classList.remove('hidden');
-  box.innerHTML = `<div><b>📞 ${caller?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min</small></div>
+  box.innerHTML = `<div><b>📞 ${caller?.model_name || caller?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min</small></div>
     <button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button>
     <button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`;
   navigator.vibrate?.([300, 120, 300]);
@@ -93,10 +96,12 @@ async function joinWebCall(room, opts = {}) { await beginCall(room, opts, false)
 async function beginCall(room, opts, initiator) {
   ensureCallUI();
   if (pc) teardownPC();
+  clearHello(); clearAck(); clearOffer();
   callRoom = room; callRowId = opts.rowId || null; callRate = parseFloat(opts.rate) || 0;
   iAmClientFlag = !!opts.asClient; isInitiatorFlag = !!initiator;
   callCostTotal = 0; callSeconds = 0; callSetupDone = false; facingMode = 'user';
   offerSent = false; pendingCandidates = []; reconnectAttempts = 0; currentPolicy = 'all';
+  peerPresent = false; gotAnswer = false; gotOffer = false;
   micOn = true; camOn = true;
   const bm = document.getElementById('btnMic'); if (bm) { bm.textContent = '🎤 Silenciar'; bm.classList.remove('off'); }
   const bc = document.getElementById('btnCam'); if (bc) { bc.textContent = '📷 Encendida'; bc.classList.remove('off'); }
@@ -117,9 +122,27 @@ async function beginCall(room, opts, initiator) {
     if (status !== 'SUBSCRIBED' || callSetupDone) return;
     callSetupDone = true;
     createPC('all');
-    send({ type: 'hello' });
-    if (isInitiatorFlag) setTimeout(() => { if (!offerSent && pc) createOffer(); }, 2000);
+    startHelloLoop();
   });
+}
+
+// Latido: me anuncio cada 1s hasta que el otro me vea
+function startHelloLoop() {
+  clearHello();
+  send({ type: 'hello' });
+  helloTimer = setInterval(() => { if (!peerPresent) send({ type: 'hello' }); else clearHello(); }, 1000);
+}
+// La contestadora confirma en bucle hasta recibir la oferta
+function startAckLoop() {
+  clearAck();
+  send({ type: 'helloAck' });
+  ackTimer = setInterval(() => { if (!gotOffer) send({ type: 'helloAck' }); else clearAck(); }, 1000);
+}
+// El que llama re-envía la oferta hasta recibir respuesta
+function startOfferLoop() {
+  if (offerTimer) return;
+  createOffer();
+  offerTimer = setInterval(() => { if (!gotAnswer) createOffer(); else clearOffer(); }, 1500);
 }
 
 function teardownPC() { if (pc) { try { pc.close(); } catch (e) {} pc = null; } offerSent = false; pendingCandidates = []; }
@@ -145,7 +168,6 @@ function createPC(policy) {
   };
 }
 
-// REINTENTO INFINITO con escalera de transports hasta lograr ruta
 function scheduleReconnect() {
   if (!callRoom) return;
   reconnectAttempts++;
@@ -154,16 +176,16 @@ function scheduleReconnect() {
   const delay = Math.min(6000, 800 + reconnectAttempts * 400);
   setTimeout(() => {
     if (!callRoom) return;
+    gotAnswer = false; gotOffer = false; pendingCandidates = [];
     createPC(policy);
-    send({ type: 'hello' });
-    if (isInitiatorFlag) setTimeout(() => { if (!offerSent && pc) createOffer(); }, 1500);
+    if (isInitiatorFlag) { startHelloLoop(); } else { startHelloLoop(); }
   }, delay);
 }
 
 function send(msg) { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { ...msg, from: currentUser.id } }); }
 function flushCandidates() { while (pendingCandidates.length && pc) { const c = pendingCandidates.shift(); pc.addIceCandidate(c).catch(() => {}); } }
 async function createOffer() {
-  if (offerSent || !pc) return;
+  if (!pc) return;
   offerSent = true;
   try { const o = await pc.createOffer(); await pc.setLocalDescription(o); send({ type: 'description', sdp: pc.localDescription }); }
   catch (e) { offerSent = false; }
@@ -171,20 +193,26 @@ async function createOffer() {
 async function handleSignal(p) {
   if (!p || p.from === currentUser.id) return;
   if (p.type === 'hello') {
+    peerPresent = true; clearHello();
     if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') createPC(currentPolicy);
-    if (!isInitiatorFlag) { send({ type: 'helloAck' }); setStatus('🤝 Contestó: conectando medios…'); }
-    if (isInitiatorFlag && !offerSent) createOffer();
+    if (!isInitiatorFlag) { setStatus('🤝 Contestó: conectando medios…'); if (!gotOffer) startAckLoop(); }
+    if (isInitiatorFlag) startOfferLoop();
     return;
   }
-  if (p.type === 'helloAck') { if (isInitiatorFlag) { setStatus('🤝 Contestó: conectando medios…'); if (!offerSent) createOffer(); } return; }
+  if (p.type === 'helloAck') {
+    peerPresent = true; clearHello();
+    if (isInitiatorFlag) { setStatus('🤝 Contestó: conectando medios…'); startOfferLoop(); }
+    return;
+  }
   if (!pc) return;
   if (p.type === 'description') {
     try {
       if (p.sdp.type === 'offer' && !isInitiatorFlag) {
+        gotOffer = true; clearAck();
         await pc.setRemoteDescription(p.sdp); flushCandidates();
         const a = await pc.createAnswer(); await pc.setLocalDescription(a); send({ type: 'description', sdp: pc.localDescription });
       } else if (p.sdp.type === 'answer' && isInitiatorFlag) {
-        await pc.setRemoteDescription(p.sdp); flushCandidates();
+        if (!gotAnswer) { gotAnswer = true; clearOffer(); await pc.setRemoteDescription(p.sdp); flushCandidates(); }
       }
     } catch (e) {}
     return;
@@ -192,7 +220,6 @@ async function handleSignal(p) {
   if (p.type === 'ice') { if (pc.remoteDescription) pc.addIceCandidate(p.candidate).catch(() => {}); else pendingCandidates.push(p.candidate); }
 }
 
-// ===== CONTROLES CON ESTADO VISIBLE =====
 function toggleMic() {
   const t = localStream?.getAudioTracks()[0]; if (!t) return;
   micOn = !micOn; t.enabled = micOn;
@@ -262,6 +289,7 @@ async function endWebCall() {
 }
 function cleanupCall() {
   if (callClock) { clearInterval(callClock); callClock = null; }
+  clearHello(); clearAck(); clearOffer();
   teardownPC();
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (callChannel) { try { db.removeChannel(callChannel); } catch (e) {} callChannel = null; }

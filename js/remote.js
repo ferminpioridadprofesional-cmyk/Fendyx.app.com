@@ -1,5 +1,6 @@
 'use strict';
 let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;
+let _wgKept=[],_wgNew=[];
 const _we={interests:new Set(),preferences:new Set(),zodiac:null};
 function toggleWChip(el,g,v){const s=_we[g];if(s.has(v)){s.delete(v);el.classList.remove('active');}else{s.add(v);el.classList.add('active');}}
 function pickWZodiac(el,v){_we.zodiac=v;document.querySelectorAll('.wz-chip').forEach(z=>z.classList.remove('active'));el.classList.add('active');}
@@ -18,6 +19,9 @@ function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))retur
  .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
  .pf-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
  .pf-gallery img{width:100%;height:110px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer}
+ .thumbwrap{position:relative;display:inline-block;margin:4px}
+ .thumbwrap img{width:80px;height:80px;object-fit:cover;border-radius:12px;border:1px solid var(--border)}
+ .thumbwrap .del{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:none;background:var(--error);color:#fff;font-size:.8rem;cursor:pointer}
  .wk-card{padding:18px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:center}
  .wk-name{font-family:'Orbitron';font-weight:900;font-size:1.3rem;margin-bottom:8px}
  .wk-row{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
@@ -46,9 +50,10 @@ function renderWkProfile(data,preview){ensureWkModal();injectGirlStyle();const r
  <p class="dim">${data.bio||rd?.bio||''}</p>
  <div class="chips-row">${(data.interests||[]).map(i=>`<span class="chip active">🎯 ${i}</span>`).join('')}${(data.preferences||[]).map(i=>`<span class="chip">💫 ${i}</span>`).join('')}</div>
  <h4 class="sub-title">📸 Galería</h4><div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='wkOpenLightbox(${JSON.stringify(photos)},${i})'>`).join('')||'<p class="dim">Sin fotos</p>'}</div>
- <div style="margin-top:12px">${preview?'<p class="dim">Vista previa (solo lectura) · TU ganancia neta: ◈ '+net+'/min</div>':`<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${net})">📹 Llamar · ◈ ${shown}/min</button>`}</div>`;openModal('wkProfileModal');}
-async function openWorkerProfile(id){const{data}=await db.from('profiles').select('*, role_details(*)').eq('id',id).single();if(!data)return;renderWkProfile(data,false);}
-async function previewWorkerProfile(){renderWkProfile(Object.assign({},currentProfile,{role_details:roleDetails?[roleDetails]:[]}),true);}
+ <div style="margin-top:12px">${preview?'<p class="dim">Vista previa (solo lectura) · TU ganancia neta: ◈ '+net+'/min</p>':`<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${net})">📹 Llamar · ◈ ${shown}/min</button>`}</div>`;openModal('wkProfileModal');}
+window._rwRenderProfile=async function(userId,preview){const{data}=await db.from('profiles').select('*, role_details(*)').eq('id',userId).single();if(!data)return;renderWkProfile(data,preview);};
+async function openWorkerProfile(id){await window._rwRenderProfile(id,false);}
+async function previewWorkerProfile(){await window._rwRenderProfile(currentUser.id,true);}
 async function openGirlGallery(idx,i){const g=(_girlsList[idx]?.gallery)||[];if(!g.length)return;wkOpenLightbox(g,i);}
 function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_level)||1));const clientRate=parseFloat(w.client_rate)||2;const name=w.display_name||'Modelo';const gallery=w.gallery||[];const mainPhoto=w.avatar_url||gallery[0]||'';return `<div class="card-item girl-card tier-${lvNum}">
  <div class="girl-photo" onclick="openGirlGallery(${idx},0)">${mainPhoto?`<img src="${mainPhoto}" alt="">`:`<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
@@ -59,60 +64,40 @@ function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_lev
  <div class="chips-row" style="margin:6px 0">${(w.interests||[]).slice(0,3).map(i=>`<span class="chip">🎯 ${i}</span>`).join('')}</div>
  <div class="row-actions"><button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button><button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹 Llamar</button></div></div>`;}
 async function fetchPublicWorkers(){const{data,error}=await db.rpc('get_public_workers');if(error){showToast('❌ '+error.message);return[];}return (typeof data==='string'?JSON.parse(data):data)||[];}
-async function loadGirls(){
-  injectGirlStyle();
-  const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');
-  const bal=parseFloat(currentProfile.tokens_balance||0);
-  const kycOk=currentProfile.kyc_status==='approved';
-  const moneyOk=bal>=1||currentProfile.unlimited_tokens||currentProfile.role==='admin';
-  if(!(kycOk&&moneyOk)){
-    grid.innerHTML='';
-    gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p>
-      <ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li>
-      <li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul>
-      <div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;
-    return;
-  }
-  gate.innerHTML='';
-  _girlsList=await fetchPublicWorkers();
-  grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">No hay chicas verificadas en línea</p>';
-}
+async function loadGirls(){injectGirlStyle();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');const bal=parseFloat(currentProfile.tokens_balance||0);const kycOk=currentProfile.kyc_status==='approved';const moneyOk=bal>=1||currentProfile.unlimited_tokens||currentProfile.role==='admin';if(!(kycOk&&moneyOk)){grid.innerHTML='';gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;return;}gate.innerHTML='';_girlsList=await fetchPublicWorkers();grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">No hay chicas verificadas en línea</p>';}
+
+// ===== Gestión galería de modelo (máx 5) =====
+function wgRender(){const wrap=document.getElementById('wpGalleryPrev');if(!wrap)return;const kept=_wgKept.map((u,i)=>`<span class="thumbwrap"><img src="${u}"><button type="button" class="del" onclick="wgRemoveKept(${i})">✕</button></span>`).join('');const nw=_wgNew.map((f,i)=>`<span class="thumbwrap"><img src="${URL.createObjectURL(f)}"><button type="button" class="del" onclick="wgRemoveNew(${i})">✕</button></span>`).join('');wrap.innerHTML=(kept+nw)||'<p class="dim">Sin fotos de modelo</p>';}
+function wgRemoveKept(i){_wgKept.splice(i,1);wgRender();}
+function wgRemoveNew(i){_wgNew.splice(i,1);wgRender();}
+function wgOnFiles(input){const files=Array.from(input.files||[]);for(const f of files){if(_wgKept.length+_wgNew.length>=5){showToast('⚠️ Máx 5 fotos');break;}_wgNew.push(f);}input.value='';wgRender();}
+
 async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker';const grid=document.getElementById('workersGrid');const panel=document.getElementById('workerPanel');
- if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;
-  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+ if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;_wgKept=[...(p.worker_gallery||[])].slice(0,5);_wgNew=[];
+  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
   panel.innerHTML=`<h3>💼 Mi Trabajo</h3><div class="wk-card tier-${lvNum}">
    <div class="wk-name">🎭 ${p.model_name||'Modelo'}</div>
    <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">TU ganancia: ◈ ${net}/min</span></div>
-   <div class="wk-kyc">${p.kyc_status==='approved'?'✅ Verificación KYC aprobada':'⏳ Verificación KYC pendiente'} · El cliente paga ◈ ${net*2}/min</div>
+   <div class="wk-kyc">${p.kyc_status==='approved'?'✅ Verificación KYC aprobada':'⏳ Verificación KYC pendiente'} · El cliente paga ◈ ${(net*2).toFixed(2)}/min</div>
    <div class="wk-switch-row"><span id="wkState" class="wk-state ${on?'on':'off'}">${on?'🟢 EN LÍNEA':'🔴 DESCONECTADA'}</span><label class="wk-switch"><input type="checkbox" id="wkToggle" ${on?'checked':''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label></div>
    <p class="dim" style="margin-top:12px">Solo recibes llamadas con la app/página <b>abierta</b> y el switch en verde.</p>
    <div class="row-buttons" style="margin-top:10px"><button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button></div>
    <div class="wk-pro"><h4 class="sub-title">🎭 Mi Perfil de Modelo</h4><form class="owner-form" onsubmit="saveWorkerPro(event)">
     <label class="dim">Nombre artístico</label><input type="text" id="wpModel" value="${p.model_name||''}">
-    <label class="dim">Fotos de modelo (máx 5)</label><input type="file" id="wpGallery" accept="image/*" multiple>
-    <div class="girl-thumbs">${(p.worker_gallery||[]).slice(0,5).map(g=>`<img src="${g}">`).join('')}</div>
+    <label class="dim">Fotos de modelo (máx 5) — toca ✕ para eliminar</label>
+    <div id="wpGalleryPrev" class="pf-gallery"></div>
+    <input type="file" id="wpGallery" accept="image/*" multiple onchange="wgOnFiles(this)">
     <label class="dim">Descripción</label><textarea id="wpBio" rows="3">${p.bio||''}</textarea>
     <label class="dim">🎯 Intereses</label><div class="chips-row">${INTERESTS.map(i=>`<span class="chip ${_we.interests.has(i)?'active':''}" onclick="toggleWChip(this,'interests','${i}')">${i}</span>`).join('')}</div>
     <label class="dim">💫 Preferencias</label><div class="chips-row">${PREFERENCES.map(i=>`<span class="chip ${_we.preferences.has(i)?'active':''}" onclick="toggleWChip(this,'preferences','${i}')">${i}</span>`).join('')}</div>
     <label class="dim">✨ Zodiaco</label><div class="chips-row">${ZODIAC.map(z=>`<span class="chip wz-chip ${_we.zodiac===z?'active':''}" onclick="pickWZodiac(this,'${z}')">${z}</span>`).join('')}</div>
     <button type="submit" class="btn-primary">💾 Guardar Perfil de Modelo</button></form></div></div>`;
+  wgRender();
   return;}
  injectGirlStyle();grid.style.display='';panel.classList.add('hidden');_girlsList=await fetchPublicWorkers();grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">Sin trabajadoras</p>';}
-async function saveWorkerPro(e){e.preventDefault();const p=currentProfile;const up={model_name:document.getElementById('wpModel').value.trim(),bio:document.getElementById('wpBio').value,interests:Array.from(_we.interests),preferences:Array.from(_we.preferences),zodiac:_we.zodiac};const files=Array.from(document.getElementById('wpGallery').files||[]);if(files.length){let g=[...(p.worker_gallery||[])];for(const f of files){if(g.length>=5){showToast('⚠️ Máx 5 fotos');break;}const path='wgallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)g.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}up.worker_gallery=g.slice(0,5);}await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();loadWorkers();showToast('✅ Perfil de Modelo guardado');}
+async function saveWorkerPro(e){e.preventDefault();const p=currentProfile;const up={model_name:document.getElementById('wpModel').value.trim(),bio:document.getElementById('wpBio').value,interests:Array.from(_we.interests),preferences:Array.from(_we.preferences),zodiac:_we.zodiac};let gallery=[..._wgKept];for(const f of _wgNew){if(gallery.length>=5)break;const path='wgallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)gallery.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}up.worker_gallery=gallery.slice(0,5);await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();loadWorkers();showToast('✅ Perfil de Modelo guardado');}
 async function setWorkerOnline(on){localStorage.setItem('fendyx_online_intent',on?'1':'0');await setWorkerOnlineDB(on);const st=document.getElementById('wkState');if(st){st.className='wk-state '+(on?'on':'off');st.textContent=on?'🟢 EN LÍNEA':'🔴 DESCONECTADA';}showToast(on?'🟢 En línea: te pueden llamar':'🔴 Desconectada');}
 function fillKycForm(){const p=currentProfile;const box=document.getElementById('kycStatusBox');const st={none:'⚪ No aplica',pending:'⏳ Pendiente',approved:'✅ Verificada',rejected:'❌ Rechazada: '+(p.kyc_note||'')}[p.kyc_status]||'⚪';box.innerHTML=`<h3>Verificación</h3><p>${st}</p><p class="dim">Real: <b>${p.full_name||'—'}</b> · Artístico: <b>${p.model_name||'—'}</b></p>${p.id_card_url?`<img class="kyc-img" src="${p.id_card_url}">`:''}${p.face_photo_url?`<img class="kyc-img" src="${p.face_photo_url}">`:''}`;document.getElementById('kycWhatsapp').value=p.whatsapp||'';}
 async function submitKycDocs(e){e.preventDefault();const up={whatsapp:document.getElementById('kycWhatsapp').value,kyc_status:'pending'};const idf=document.getElementById('kycIdCard').files[0];const fcf=document.getElementById('kycFace').files[0];if(idf){const p1='kyc/'+currentUser.id+'_id_'+Date.now()+'.jpg';const r=await db.storage.from('fendyx-assets').upload(p1,idf);if(!r.error)up.id_card_url=db.storage.from('fendyx-assets').getPublicUrl(p1).data.publicUrl;}if(fcf){const p2='kyc/'+currentUser.id+'_face_'+Date.now()+'.jpg';const r=await db.storage.from('fendyx-assets').upload(p2,fcf);if(!r.error)up.face_photo_url=db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl;}await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();fillKycForm();showToast('📨 Enviado');}
-async function startCall(workerId,netRate){
-  netRate=parseFloat(netRate)||1;
-  const clientRate=netRate*2;
-  const{data:wk}=await db.from('profiles').select('is_online, kyc_status').eq('id',workerId).single();
-  if(!wk||wk.kyc_status!=='approved'){showToast('❌ No verificada');return;}
-  if(!wk.is_online){showToast('❌ No está en línea ahora');return;}
-  if(currentProfile.role!=='admin'&&currentProfile.kyc_status!=='approved'){showToast('🪪 Verifica tu identidad en Mi Perfil para llamar');showSection('profile');return;}
-  if(!requireBalance(clientRate))return;
-  const roomId='FENDYX'+Date.now();
-  const{data:call}=await db.from('video_calls').insert({worker_id:workerId,client_id:currentUser.id,room_id:roomId,rate_per_minute:netRate,status:'active',started_at:new Date().toISOString()}).select().single();
-  await loadScript('calls.js');
-  await startWebCall(roomId,{rate:netRate,rowId:call.id,asClient:true});
-}
+async function startCall(workerId,netRate){netRate=parseFloat(netRate)||1;const clientRate=netRate*2;const{data:wk}=await db.from('profiles').select('is_online, kyc_status').eq('id',workerId).single();if(!wk||wk.kyc_status!=='approved'){showToast('❌ No verificada');return;}if(!wk.is_online){showToast('❌ No está en línea ahora');return;}if(currentProfile.role!=='admin'&&currentProfile.kyc_status!=='approved'){showToast('🪪 Verifica tu identidad en Mi Perfil para llamar');showSection('profile');return;}if(!requireBalance(clientRate))return;const roomId='FENDYX'+Date.now();const{data:call}=await db.from('video_calls').insert({worker_id:workerId,client_id:currentUser.id,room_id:roomId,rate_per_minute:netRate,status:'active',started_at:new Date().toISOString()}).select().single();await loadScript('calls.js');await startWebCall(roomId,{rate:netRate,rowId:call.id,asClient:true});}
 async function joinCall(callId,roomId,rate){await loadScript('calls.js');await joinWebCall(roomId,{rate:parseFloat(rate)||0,rowId:callId,asClient:false});}

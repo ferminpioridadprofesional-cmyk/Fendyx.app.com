@@ -6,6 +6,7 @@ let offerSent = false, pendingCandidates = [], currentPolicy = 'all';
 let peerPresent = false, gotAnswer = false, gotOffer = false;
 let helloTimer = null, ackTimer = null, offerTimer = null, watchdog = null, lastReconnectAt = 0, callStartAt = 0;
 let micOn = true, camOn = true, netListenersOn = false;
+let ringTimer = null;
 
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
@@ -21,6 +22,32 @@ function showNetHint(on) { const h = document.getElementById('netHint'); if (h) 
 function clearHello() { if (helloTimer) { clearInterval(helloTimer); helloTimer = null; } }
 function clearAck() { if (ackTimer) { clearInterval(ackTimer); ackTimer = null; } }
 function clearOffer() { if (offerTimer) { clearInterval(offerTimer); offerTimer = null; } }
+
+// ===== TIMBRE: sonido + vibración =====
+function startRing() {
+  stopRing();
+  try {
+    const ctx = window._fendyxAudio || (window._fendyxAudio = new (window.AudioContext || window.webkitAudioContext)());
+    ctx.resume?.();
+    const beep = () => {
+      try {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+        o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.45);
+      } catch (e) {}
+    };
+    beep();
+    ringTimer = setInterval(beep, 1200);
+  } catch (e) {}
+  try { navigator.vibrate?.([400, 200, 400, 200, 400]); } catch (e) {}
+}
+function stopRing() {
+  if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+  try { navigator.vibrate?.(0); } catch (e) {}
+}
 
 function ensureCallUI() {
   if (document.getElementById('fendyx-call-style')) return;
@@ -92,78 +119,42 @@ function armNetworkWatch() {
   window.addEventListener('offline', onChange);
 }
 
-// ===== SELECTOR DE DISPOSITIVOS =====
-function toggleDevicePanel() {
-  const p = document.getElementById('devicePanel');
-  if (!p) return;
-  const open = p.classList.toggle('hidden');
-  if (!open) populateDevices();
-}
+function toggleDevicePanel() { const p = document.getElementById('devicePanel'); if (!p) return; if (!p.classList.toggle('hidden')) populateDevices(); }
 async function populateDevices() {
   try {
     const devs = await navigator.mediaDevices.enumerateDevices();
-    const cams = devs.filter(d => d.kind === 'videoinput');
-    const mics = devs.filter(d => d.kind === 'audioinput');
+    const cams = devs.filter(d => d.kind === 'videoinput'); const mics = devs.filter(d => d.kind === 'audioinput');
     const sc = document.getElementById('selCam'), sm = document.getElementById('selMic');
     if (sc) sc.innerHTML = cams.map((c, i) => `<option value="${c.deviceId}" ${c.deviceId === currentDeviceId ? 'selected' : ''}>${c.label || ('Cámara ' + (i + 1))}</option>`).join('');
     if (sm) sm.innerHTML = mics.map((m, i) => `<option value="${m.deviceId}" ${m.deviceId === currentMicId ? 'selected' : ''}>${m.label || ('Micrófono ' + (i + 1))}</option>`).join('');
   } catch (e) {}
 }
-async function changeCam(deviceId) {
-  if (!deviceId || !pc || !localStream) return;
-  try {
-    const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
-    const nt = ns.getVideoTracks()[0];
-    applyVideoTrack(nt);
-    showToast('📷 Cámara cambiada');
-  } catch (e) { showToast('❌ No se pudo usar esa cámara'); }
-}
-async function changeMic(deviceId) {
-  if (!deviceId || !pc || !localStream) return;
-  try {
-    const ns = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false });
-    const nt = ns.getAudioTracks()[0];
-    applyAudioTrack(nt);
-    showToast('🎤 Micrófono cambiado');
-  } catch (e) { showToast('❌ No se pudo usar ese micrófono'); }
-}
-function applyVideoTrack(nt) {
-  currentDeviceId = nt.getSettings?.().deviceId || nt.id;
-  const ot = localStream.getVideoTracks()[0];
-  if (ot) { ot.stop(); localStream.removeTrack(ot); }
-  localStream.addTrack(nt);
-  const lv = document.getElementById('localVideo'); if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); }
-  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-  if (sender) sender.replaceTrack(nt);
-}
-function applyAudioTrack(nt) {
-  currentMicId = nt.getSettings?.().deviceId || nt.id;
-  const ot = localStream.getAudioTracks()[0];
-  if (ot) { ot.stop(); localStream.removeTrack(ot); }
-  localStream.addTrack(nt);
-  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-  if (sender) sender.replaceTrack(nt);
-}
+async function changeCam(deviceId) { if (!deviceId || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false }); applyVideoTrack(ns.getVideoTracks()[0]); showToast('📷 Cámara cambiada'); } catch (e) { showToast('❌ No se pudo usar esa cámara'); } }
+async function changeMic(deviceId) { if (!deviceId || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false }); applyAudioTrack(ns.getAudioTracks()[0]); showToast('🎤 Micrófono cambiado'); } catch (e) { showToast('❌ No se pudo usar ese micrófono'); } }
+function applyVideoTrack(nt) { currentDeviceId = nt.getSettings?.().deviceId || nt.id; const ot = localStream.getVideoTracks()[0]; if (ot) { ot.stop(); localStream.removeTrack(ot); } localStream.addTrack(nt); const lv = document.getElementById('localVideo'); if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); } const s = pc.getSenders().find(s => s.track && s.track.kind === 'video'); if (s) s.replaceTrack(nt); }
+function applyAudioTrack(nt) { currentMicId = nt.getSettings?.().deviceId || nt.id; const ot = localStream.getAudioTracks()[0]; if (ot) { ot.stop(); localStream.removeTrack(ot); } localStream.addTrack(nt); const s = pc.getSenders().find(s => s.track && s.track.kind === 'audio'); if (s) s.replaceTrack(nt); }
 
 async function showIncomingCall(row) {
   ensureCallUI();
   const { data: caller } = await db.from('profiles').select('full_name, model_name').eq('id', row.client_id).single();
   const box = document.getElementById('incomingCall'); if (!box) return;
   box.classList.remove('hidden');
-  box.innerHTML = `<div><b>📞 ${caller?.model_name || caller?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min</small></div>
+  box.innerHTML = `<div><b>📞 ${caller?.model_name || caller?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min · Videollamada FENDYX</small></div>
     <button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button>
     <button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`;
-  navigator.vibrate?.([300, 120, 300]);
+  startRing();
 }
 async function acceptIncoming(room, rate, rowId) {
+  stopRing();
   document.getElementById('incomingCall').classList.add('hidden');
   await joinWebCall(room, { rate: parseFloat(rate) || 0, rowId, asClient: false });
 }
 async function rejectIncoming(rowId) {
+  stopRing();
   document.getElementById('incomingCall').classList.add('hidden');
   await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', rowId);
 }
-function remoteHungUp(row) { if (callRoom && row.room_id === callRoom) { showToast('📞 La otra persona colgó'); cleanupCall(); } }
+function remoteHungUp(row) { stopRing(); if (callRoom && row.room_id === callRoom) { showToast('📞 La otra persona colgó'); cleanupCall(); } }
 
 async function startWebCall(room, opts = {}) { await beginCall(room, opts, true); }
 async function joinWebCall(room, opts = {}) { await beginCall(room, opts, false); }
@@ -182,10 +173,7 @@ async function beginCall(room, opts, initiator) {
   const bc = document.getElementById('btnCam'); if (bc) { bc.textContent = '📷 Encendida'; bc.classList.remove('off'); }
   document.getElementById('callTimer').textContent = '00:00';
   const costSpan = document.getElementById('callCost');
-  if (costSpan) {
-    if (iAmClientFlag) { costSpan.style.display = 'none'; }
-    else { costSpan.style.display = ''; costSpan.style.color = 'var(--success)'; costSpan.textContent = '+0.00 ◈'; }
-  }
+  if (costSpan) { if (iAmClientFlag) { costSpan.style.display = 'none'; } else { costSpan.style.display = ''; costSpan.style.color = 'var(--success)'; costSpan.textContent = '+0.00 ◈'; } }
   setChatState('💬 Chat no conectado', false);
   showNetHint(false);
   setStatus('📷 Solicitando cámara…');
@@ -232,11 +220,7 @@ function createPC(policy) {
   };
   pc.onconnectionstatechange = () => {
     const st = pc.connectionState;
-    if (st === 'connected') {
-      setStatus('🟢 Video conectado'); showNetHint(false);
-      playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {});
-      startCallClock();
-    }
+    if (st === 'connected') { setStatus('🟢 Video conectado'); showNetHint(false); playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); }
     else if (st === 'failed') queueReconnect(600);
     else if (st === 'closed' && callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); }
   };
@@ -303,7 +287,6 @@ async function handleSignal(p) {
   if (p.type === 'ice') { if (pc.remoteDescription) pc.addIceCandidate(p.candidate).catch(() => {}); else pendingCandidates.push(p.candidate); }
 }
 
-// VOLTEO CON ESCALERA (arregla Tecno/Android de gama baja)
 async function flipCamera() {
   if (!localStream || !pc) return;
   let cams = [];
@@ -315,7 +298,7 @@ async function flipCamera() {
   for (const c of others) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: c.deviceId } }, audio: false }); break; } catch (e) {} }
   if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facingMode } }, audio: false }); } catch (e) {} }
   if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode }, audio: false }); } catch (e) {} }
-  if (!ns) { showToast('❌ No se pudo voltear; usa ⚙️ para elegir cámara'); return; }
+  if (!ns) { showToast('❌ No se pudo voltear; usa ⚙️'); return; }
   const nt = ns.getVideoTracks()[0];
   const newId = nt.getSettings?.().deviceId || null;
   if (newId && newId === currentDeviceId) { showToast('❌ El modelo no cambió de lente; usa ⚙️'); return; }
@@ -357,16 +340,10 @@ function startCallClock() {
     const t = document.getElementById('callTimer');
     if (t) t.textContent = String(Math.floor(callSeconds / 60)).padStart(2, '0') + ':' + String(callSeconds % 60).padStart(2, '0');
     const minutes = Math.floor(callSeconds / 60);
-    if (!iAmClientFlag) {
-      const earned = (callRate * minutes).toFixed(2);
-      const c = document.getElementById('callCost'); if (c) c.textContent = '+' + earned + ' ◈';
-    }
+    if (!iAmClientFlag) { const earned = (callRate * minutes).toFixed(2); const c = document.getElementById('callCost'); if (c) c.textContent = '+' + earned + ' ◈'; }
     if (iAmClientFlag && callRate > 0 && callSeconds % 60 === 0 && callRowId) {
       const { data: nb, error } = await db.rpc('pay_call_minute', { p_call: callRowId });
-      if (error || nb === -1 || (nb !== null && nb <= 0)) {
-        showToast('❌ Necesitas más tokens para llamar o continuar la llamada');
-        endWebCall(); return;
-      }
+      if (error || nb === -1 || (nb !== null && nb <= 0)) { showToast('❌ Necesitas más tokens para llamar o continuar la llamada'); endWebCall(); return; }
       callCostTotal += callRate;
       currentProfile.tokens_balance = nb; updateHeader();
     }
@@ -374,11 +351,13 @@ function startCallClock() {
 }
 
 async function endWebCall() {
+  stopRing();
   if (callChannel) { try { callChannel.send({ type: 'broadcast', event: 'hangup', payload: { from: currentUser.id } }); } catch (e) {} }
   if (callRowId) await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', callRowId);
   cleanupCall();
 }
 function cleanupCall() {
+  stopRing();
   if (callClock) { clearInterval(callClock); callClock = null; }
   if (watchdog) { clearInterval(watchdog); watchdog = null; }
   clearHello(); clearAck(); clearOffer();

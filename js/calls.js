@@ -2,15 +2,14 @@
 let pc = null, localStream = null, callChannel = null, callRoom = null;
 let callSeconds = 0, callClock = null, callCostTotal = 0, callRowId = null, callRate = 0, iAmClientFlag = false, isInitiatorFlag = false;
 let callSetupDone = false, facingMode = 'user';
-let offerSent = false, answerSent = false, pendingCandidates = [], iceRestarted = false;
+let offerSent = false, pendingCandidates = [], reconnectAttempts = 0;
 
+// REDUNDANCIA: varios STUN + 2 TURN (UDP y TCP/443) para cruzar NAT de operadora
 const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: ['turn:relay.backups.cz:3478', 'turn:relay.backups.cz:5349?transport=tcp'], username: 'webrtc', credential: 'webrtc' }
 ];
 
 function ensureCallUI() {
@@ -38,12 +37,11 @@ function ensureCallUI() {
   if (mc) mc.innerHTML = `
     <div class="call-info"><span id="callTimer">00:00</span><span id="callCost">◈ 0.00</span></div>
     <div class="video-wrap">
-      <video id="remoteVideo" autoplay playsinline muted></video>
+      <video id="remoteVideo" autoplay playsinline></video>
       <video id="localVideo" autoplay playsinline muted></video>
       <div id="callStatusMsg" class="dim">Conectando…</div>
     </div>
     <div class="call-controls">
-      <button id="btnSound" class="btn-small" onclick="toggleSound()">🔊 Sonido</button>
       <button id="btnMic" class="btn-small" onclick="toggleMic()">🎤</button>
       <button id="btnCam" class="btn-small" onclick="toggleCam()">📷</button>
       <button id="btnFlip" class="btn-small" onclick="flipCamera()">🔄</button>
@@ -53,6 +51,24 @@ function ensureCallUI() {
       <div id="callChatList" class="call-chat-list"></div>
       <div class="call-chat-input"><input id="callChatInput" placeholder="Mensaje en la llamada…" onkeypress="if(event.key==='Enter')sendCallChat()"><button class="btn-small" onclick="sendCallChat()">➤</button></div>
     </div>`;
+}
+
+// AUDIO AUTOMÁTICO: intenta sonar ya; si el navegador lo veta, se activa con el primer toque
+function armAutoUnmute() {
+  const unmute = () => {
+    const rv = document.getElementById('remoteVideo');
+    if (rv) { rv.muted = false; rv.play().catch(() => {}); }
+    window.removeEventListener('pointerdown', unmute, true);
+    window.removeEventListener('keydown', unmute, true);
+  };
+  window.addEventListener('pointerdown', unmute, true);
+  window.addEventListener('keydown', unmute, true);
+}
+function playRemoteNow() {
+  const rv = document.getElementById('remoteVideo');
+  if (!rv) return;
+  rv.muted = false;
+  rv.play().catch(() => armAutoUnmute());
 }
 
 async function showIncomingCall(row) {
@@ -80,11 +96,11 @@ async function joinWebCall(room, opts = {}) { await beginCall(room, opts, false)
 
 async function beginCall(room, opts, initiator) {
   ensureCallUI();
-  if (pc) cleanupCall();
+  if (pc) teardownPC();
   callRoom = room; callRowId = opts.rowId || null; callRate = parseFloat(opts.rate) || 0;
   iAmClientFlag = !!opts.asClient; isInitiatorFlag = !!initiator;
   callCostTotal = 0; callSeconds = 0; callSetupDone = false; facingMode = 'user';
-  offerSent = false; answerSent = false; pendingCandidates = []; iceRestarted = false;
+  offerSent = false; pendingCandidates = []; reconnectAttempts = 0;
   document.getElementById('callTimer').textContent = '00:00';
   document.getElementById('callCost').textContent = iAmClientFlag && callRate > 0 ? '◈ 0.00' : (currentProfile.unlimited_tokens ? '∞ ADMIN' : '◈ 0.00');
   document.getElementById('callStatusMsg').textContent = 'Solicitando cámara…';
@@ -92,12 +108,11 @@ async function beginCall(room, opts, initiator) {
   openModal('modal-call');
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'user' } }, audio: { echoCancellation: true, noiseSuppression: true } });
-    const lv = document.getElementById('localVideo');
-    lv.srcObject = localStream; lv.muted = true; lv.play().catch(() => {});
   } catch (e) {
-    try { localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); const lv = document.getElementById('localVideo'); lv.srcObject = localStream; lv.muted = true; lv.play().catch(() => {}); }
+    try { localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
     catch (e2) { showToast('❌ Permiso de cámara/micrófono denegado'); closeModal('modal-call'); return; }
   }
+  const lv = document.getElementById('localVideo'); lv.srcObject = localStream; lv.muted = true; lv.play().catch(() => {});
   callChannel = db.channel('call_' + room)
     .on('broadcast', { event: 'signal' }, ({ payload }) => handleSignal(payload))
     .on('broadcast', { event: 'chatmsg' }, ({ payload }) => appendCallChat(payload.text, false))
@@ -105,37 +120,48 @@ async function beginCall(room, opts, initiator) {
   callChannel.subscribe(async status => {
     if (status !== 'SUBSCRIBED' || callSetupDone) return;
     callSetupDone = true;
-    setupPeer();
+    createPC();
     send({ type: 'hello' });
-    if (isInitiatorFlag) setTimeout(() => { if (!offerSent && pc) createOffer(); }, 2500);
+    if (isInitiatorFlag) setTimeout(() => { if (!offerSent && pc) createOffer(); }, 2000);
   });
 }
 
-function setupPeer() {
-  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+function teardownPC() { if (pc) { try { pc.close(); } catch (e) {} pc = null; } offerSent = false; pendingCandidates = []; }
+
+function createPC() {
+  teardownPC();
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, iceCandidatePoolSize: 4 });
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
   pc.ontrack = e => {
     const rv = document.getElementById('remoteVideo');
-    if (rv) { rv.srcObject = e.streams[0]; rv.muted = true; rv.play().catch(() => {}); }
-    const m = document.getElementById('callStatusMsg'); if (m) m.textContent = '🟢 Conectada · pulsa 🔊 para oír';
+    if (rv) { rv.srcObject = e.streams[0]; playRemoteNow(); }
+    const m = document.getElementById('callStatusMsg'); if (m) m.textContent = '🟢 Conectada';
   };
   pc.onicecandidate = e => { if (e.candidate) send({ type: 'ice', candidate: e.candidate }); };
   pc.oniceconnectionstatechange = () => {
-    const m = document.getElementById('callStatusMsg');
-    const s = pc.iceConnectionState;
-    if (m && s === 'checking') m.textContent = ' Conectando medios…';
-    if (m && (s === 'connected' || s === 'completed')) m.textContent = '🟢 Conectada · pulsa 🔊 para oír';
-    if (s === 'disconnected' && !iceRestarted) { iceRestarted = true; try { pc.restartIce(); } catch (e) {} if (m) m.textContent = '🟡 Reconectando…'; }
-    if (s === 'failed') { if (m) m.textContent = '❌ Red restrictiva (prueba en Wi-Fi)'; }
+    const s = pc.iceConnectionState; const m = document.getElementById('callStatusMsg');
+    if (s === 'disconnected') { try { pc.restartIce(); } catch (e) {} if (m) m.textContent = '🟡 Estabilizando…'; }
+    if (s === 'failed') scheduleReconnect();
   };
   pc.onconnectionstatechange = () => {
-    const st = pc.connectionState;
-    if (st === 'connected') {
-      const rv = document.getElementById('remoteVideo'); const lv = document.getElementById('localVideo');
-      if (rv) rv.play().catch(() => {}); if (lv) lv.play().catch(() => {});
-      startCallClock();
-    } else if (st === 'failed' || st === 'closed') { if (callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); } }
+    const st = pc.connectionState; const m = document.getElementById('callStatusMsg');
+    if (st === 'connected') { reconnectAttempts = 0; if (m) m.textContent = '🟢 Conectada'; playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); }
+    else if (st === 'failed') scheduleReconnect();
+    else if (st === 'closed' && callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); }
   };
+}
+
+// AUTO-RECONEXIÓN: si la red cae, renegocia sin colgar (hasta 3 intentos)
+function scheduleReconnect() {
+  if (!callRoom || reconnectAttempts >= 3) { if (callRoom) { showToast('📞 Conexión perdida'); cleanupCall(); } return; }
+  reconnectAttempts++;
+  const m = document.getElementById('callStatusMsg'); if (m) m.textContent = '🟡 Reconectando (' + reconnectAttempts + '/3)…';
+  setTimeout(() => {
+    if (!callRoom) return;
+    createPC();
+    send({ type: 'hello' });
+    if (isInitiatorFlag) setTimeout(() => { if (!offerSent && pc) createOffer(); }, 1500);
+  }, 900);
 }
 
 function send(msg) { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { ...msg, from: currentUser.id } }); }
@@ -144,34 +170,33 @@ async function createOffer() {
   if (offerSent || !pc) return;
   offerSent = true;
   try { const o = await pc.createOffer(); await pc.setLocalDescription(o); send({ type: 'description', sdp: pc.localDescription }); }
-  catch (e) { offerSent = false; console.warn(e); }
+  catch (e) { offerSent = false; }
 }
 async function handleSignal(p) {
-  if (!p || p.from === currentUser.id || !pc) return;
-  if (p.type === 'hello') { if (!isInitiatorFlag) send({ type: 'helloAck' }); if (isInitiatorFlag && !offerSent) createOffer(); return; }
+  if (!p || p.from === currentUser.id) return;
+  if (p.type === 'hello') {
+    // Si mi PC está caído, lo recreo para poder renegociar
+    if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') createPC();
+    if (!isInitiatorFlag) send({ type: 'helloAck' });
+    if (isInitiatorFlag && !offerSent) createOffer();
+    return;
+  }
   if (p.type === 'helloAck') { if (isInitiatorFlag && !offerSent) createOffer(); return; }
+  if (!pc) return;
   if (p.type === 'description') {
     try {
       if (p.sdp.type === 'offer' && !isInitiatorFlag) {
         await pc.setRemoteDescription(p.sdp); flushCandidates();
-        if (!answerSent) { answerSent = true; const a = await pc.createAnswer(); await pc.setLocalDescription(a); send({ type: 'description', sdp: pc.localDescription }); }
+        const a = await pc.createAnswer(); await pc.setLocalDescription(a); send({ type: 'description', sdp: pc.localDescription });
       } else if (p.sdp.type === 'answer' && isInitiatorFlag) {
         await pc.setRemoteDescription(p.sdp); flushCandidates();
       }
-    } catch (e) { console.warn(e); }
+    } catch (e) {}
     return;
   }
   if (p.type === 'ice') { if (pc.remoteDescription) pc.addIceCandidate(p.candidate).catch(() => {}); else pendingCandidates.push(p.candidate); }
 }
 
-// ===== AUDIO / VIDEO CONTROLES =====
-function toggleSound() {
-  const rv = document.getElementById('remoteVideo'); if (!rv) return;
-  rv.muted = !rv.muted;
-  rv.play().catch(() => {});
-  const b = document.getElementById('btnSound'); if (b) b.textContent = rv.muted ? '🔇 Silencio' : '🔊 Sonido';
-  if (!rv.muted) showToast('🔊 Sonido activado');
-}
 function toggleMic() { const t = localStream?.getAudioTracks()[0]; if (t) t.enabled = !t.enabled; }
 function toggleCam() { const t = localStream?.getVideoTracks()[0]; if (t) t.enabled = !t.enabled; }
 async function flipCamera() {
@@ -190,7 +215,6 @@ async function flipCamera() {
   } catch (e) { showToast('❌ No se pudo voltear'); }
 }
 
-// ===== CHAT EN LA LLAMADA =====
 function appendCallChat(text, mine) {
   const list = document.getElementById('callChatList'); if (!list) return;
   list.insertAdjacentHTML('beforeend', `<div class="cc ${mine ? 'me' : 'them'}">${text}</div>`);
@@ -231,9 +255,9 @@ async function endWebCall() {
 }
 function cleanupCall() {
   if (callClock) { clearInterval(callClock); callClock = null; }
-  if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+  teardownPC();
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (callChannel) { try { db.removeChannel(callChannel); } catch (e) {} callChannel = null; }
-  callRoom = null; callRowId = null; callSetupDone = false; offerSent = false; answerSent = false; pendingCandidates = []; iceRestarted = false;
+  callRoom = null; callRowId = null; callSetupDone = false; reconnectAttempts = 0;
   closeModal('modal-call');
 }

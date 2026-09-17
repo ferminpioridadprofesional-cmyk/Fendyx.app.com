@@ -1,4 +1,9 @@
 'use strict';
+let _girlsList = [];
+const _we = { interests: new Set(), preferences: new Set(), zodiac: null };
+function toggleWChip(el, g, v) { const s = _we[g]; if (s.has(v)) { s.delete(v); el.classList.remove('active'); } else { s.add(v); el.classList.add('active'); } }
+function pickWZodiac(el, v) { _we.zodiac = v; document.querySelectorAll('.wz-chip').forEach(z => z.classList.remove('active')); el.classList.add('active'); }
+
 function injectGirlStyle() {
   if (document.getElementById('fendyx-girl-style')) return;
   const st = document.createElement('style');
@@ -6,10 +11,10 @@ function injectGirlStyle() {
   st.textContent = `
     .girl-card{padding:14px}
     .girl-photo{width:100%;height:220px;border-radius:14px;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
-    .girl-photo img{width:100%;height:100%;object-fit:cover}
+    .girl-photo img{width:100%;height:100%;object-fit:cover;object-position:center}
     .girl-initial{font-size:3rem;color:var(--dim)}
     .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
-    .girl-thumbs img{width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--border);cursor:pointer}
+    .girl-thumbs img{width:52px;height:52px;object-fit:cover;object-position:center;border-radius:9px;border:1px solid var(--border);cursor:pointer}
     .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
     .wk-card{padding:18px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:center}
     .wk-name{font-family:'Orbitron';font-weight:900;font-size:1.3rem;margin-bottom:8px}
@@ -25,25 +30,28 @@ function injectGirlStyle() {
     .wk-slider:before{content:'';position:absolute;width:26px;height:26px;left:3px;top:2px;border-radius:50%;background:var(--error);transition:.3s;box-shadow:0 0 10px rgba(255,59,107,.6)}
     .wk-switch input:checked + .wk-slider{background:rgba(0,255,157,.2);border-color:var(--success);animation:switchGlow 1.6s infinite}
     .wk-switch input:checked + .wk-slider:before{transform:translateX(32px);background:var(--success);box-shadow:0 0 14px rgba(0,255,157,.8)}
-    @keyframes switchGlow{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.3)}50%{box-shadow:0 0 18px rgba(0,255,157,.7)}}`;
+    @keyframes switchGlow{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.3)}50%{box-shadow:0 0 18px rgba(0,255,157,.7)}}
+    .wk-pro{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:12px}`;
   document.head.appendChild(st);
 }
-function girlCard(w) {
+function openGirlGallery(idx, i) { const g = (_girlsList[idx]?.gallery) || []; if (g.length) openLightbox(g, i); }
+
+function girlCard(w, idx) {
   const lvNum = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
   const rate = parseFloat(w.rate_per_minute) || levelInfo(lvNum).rate;
   const name = w.display_name || 'Modelo';
-  const mainPhoto = w.avatar_url || (w.gallery_urls || [])[0] || '';
-  const gallery = (w.gallery_urls || []).slice(0, 5);
+  const gallery = w.gallery || [];
+  const mainPhoto = w.avatar_url || gallery[0] || '';
   return `<div class="card-item girl-card tier-${lvNum}">
-    <div class="girl-photo" onclick="openProfile('${w.id}')">${mainPhoto ? `<img src="${mainPhoto}" alt="">` : `<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
-    ${gallery.length ? `<div class="girl-thumbs">${gallery.map(g => `<img src="${g}" alt="" onclick="event.stopPropagation();openProfile('${w.id}')">`).join('')}</div>` : ''}
+    <div class="girl-photo" onclick="openGirlGallery(${idx},0)">${mainPhoto ? `<img src="${mainPhoto}" alt="">` : `<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
+    ${gallery.length ? `<div class="girl-thumbs">${gallery.map((g, i) => `<img src="${g}" alt="" onclick="openGirlGallery(${idx},${i})">`).join('')}</div>` : ''}
     <div class="girl-head"><div class="card-title" style="margin:0">${name}${w.age ? ', ' + w.age : ''}</div>${levelBadge(lvNum)}</div>
     <span class="status-pill ${w.is_online ? 'online' : 'offline'}">${w.is_online ? 'EN LÍNEA' : 'DESCONECTADA'}</span>
     <span class="role-badge">◈ ${rate}/min</span> ${w.zodiac ? `<span class="chip">${w.zodiac}</span>` : ''}
     <div class="card-desc">${w.occupation || ''}</div>
     <div class="chips-row" style="margin:6px 0">${(w.interests || []).slice(0, 3).map(i => `<span class="chip">🎯 ${i}</span>`).join('')}</div>
     <div class="row-actions">
-      <button class="btn-small" onclick="openProfile('${w.id}')">👤 Ver perfil y fotos</button>
+      <button class="btn-small" onclick="viewWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button>
       <button class="btn-small success" onclick="startCall('${w.id}',${rate})" ${w.is_online ? '' : 'disabled'}>📹 Llamar</button>
     </div>
   </div>`;
@@ -56,9 +64,10 @@ async function fetchPublicWorkers() {
 async function loadGirls() {
   if (!requireActive()) return;
   injectGirlStyle();
-  const list = await fetchPublicWorkers();
-  document.getElementById('girlsGrid').innerHTML = list.map(girlCard).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
+  _girlsList = await fetchPublicWorkers();
+  document.getElementById('girlsGrid').innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
 }
+
 async function loadWorkers() {
   const isWorker = currentProfile.role === 'remote_worker';
   const grid = document.getElementById('workersGrid');
@@ -67,27 +76,59 @@ async function loadWorkers() {
     injectGirlStyle();
     grid.style.display = 'none'; grid.innerHTML = '';
     panel.classList.remove('hidden');
+    const p = currentProfile;
     const lvNum = Math.min(5, Math.max(1, parseInt(roleDetails?.worker_level) || 1));
     const rate = roleDetails?.rate_per_minute != null ? roleDetails.rate_per_minute : levelInfo(lvNum).rate;
-    const on = !!currentProfile.is_online;
+    const on = !!p.is_online;
+    _we.interests = new Set(p.interests || []); _we.preferences = new Set(p.preferences || []); _we.zodiac = p.zodiac || null;
+    const INTERESTS = ['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
+    const PREFERENCES = ['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
+    const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
     panel.innerHTML = `<h3>💼 Mi Trabajo</h3>
       <div class="wk-card tier-${lvNum}">
-        <div class="wk-name">🎭 ${currentProfile.model_name || 'Modelo'}</div>
+        <div class="wk-name">🎭 ${p.model_name || 'Modelo'}</div>
         <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">◈ ${rate}/min</span></div>
-        <div class="wk-kyc">${currentProfile.kyc_status === 'approved' ? '✅ Verificación KYC aprobada' : '⏳ Verificación KYC pendiente'}</div>
+        <div class="wk-kyc">${p.kyc_status === 'approved' ? '✅ Verificación KYC aprobada' : '⏳ Verificación KYC pendiente'}</div>
         <div class="wk-switch-row">
           <span id="wkState" class="wk-state ${on ? 'on' : 'off'}">${on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'}</span>
           <label class="wk-switch"><input type="checkbox" id="wkToggle" ${on ? 'checked' : ''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label>
         </div>
-        <p class="dim" style="margin-top:12px">Solo recibes llamadas mientras mantienes la app/página <b>abierta</b> y el interruptor en verde. Al minimizar o cerrar, pasas a desconectada automáticamente.</p>
+        <p class="dim" style="margin-top:12px">Solo recibes llamadas con la app/página <b>abierta</b> y el switch en verde.</p>
+        <div class="row-buttons" style="margin-top:10px">
+          <button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button>
+        </div>
+        <div class="wk-pro">
+          <h4 class="sub-title">🎭 Mi Perfil de Modelo (solo visible en Videollamada con chicas)</h4>
+          <form class="owner-form" onsubmit="saveWorkerPro(event)">
+            <label class="dim">Nombre artístico</label><input type="text" id="wpModel" value="${p.model_name || ''}">
+            <label class="dim">Fotos de modelo (máx 5)</label><input type="file" id="wpGallery" accept="image/*" multiple>
+            <div class="girl-thumbs">${(p.worker_gallery || []).slice(0, 5).map(g => `<img src="${g}">`).join('')}</div>
+            <label class="dim">Descripción</label><textarea id="wpBio" rows="3">${p.bio || ''}</textarea>
+            <label class="dim">🎯 Intereses</label><div class="chips-row">${INTERESTS.map(i => `<span class="chip ${_we.interests.has(i) ? 'active' : ''}" onclick="toggleWChip(this,'interests','${i}')">${i}</span>`).join('')}</div>
+            <label class="dim">💫 Preferencias</label><div class="chips-row">${PREFERENCES.map(i => `<span class="chip ${_we.preferences.has(i) ? 'active' : ''}" onclick="toggleWChip(this,'preferences','${i}')">${i}</span>`).join('')}</div>
+            <label class="dim">✨ Zodiaco</label><div class="chips-row">${ZODIAC.map(z => `<span class="chip wz-chip ${_we.zodiac === z ? 'active' : ''}" onclick="pickWZodiac(this,'${z}')">${z}</span>`).join('')}</div>
+            <button type="submit" class="btn-primary">💾 Guardar Perfil de Modelo</button>
+          </form>
+        </div>
       </div>`;
     return;
   }
   injectGirlStyle();
   grid.style.display = '';
   panel.classList.add('hidden');
-  const list = await fetchPublicWorkers();
-  grid.innerHTML = list.map(girlCard).join('') || '<p class="empty-state">Sin trabajadoras</p>';
+  _girlsList = await fetchPublicWorkers();
+  grid.innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">Sin trabajadoras</p>';
+}
+async function previewWorkerProfile() { await viewWorkerProfile(currentUser.id, true); }
+async function saveWorkerPro(e) {
+  e.preventDefault();
+  const p = currentProfile;
+  const up = { model_name: document.getElementById('wpModel').value.trim(), bio: document.getElementById('wpBio').value, interests: Array.from(_we.interests), preferences: Array.from(_we.preferences), zodiac: _we.zodiac };
+  const files = Array.from(document.getElementById('wpGallery').files || []);
+  if (files.length) { let g = [...(p.worker_gallery || [])]; for (const f of files) { if (g.length >= 5) { showToast('⚠️ Máx 5 fotos'); break; } const path = 'wgallery/' + currentUser.id + '_' + Date.now() + '_' + f.name.replace(/[^a-zA-Z0-9.]/g, '_'); const r = await db.storage.from('fendyx-assets').upload(path, f); if (!r.error) g.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl); } up.worker_gallery = g.slice(0, 5); }
+  await db.from('profiles').update(up).eq('id', currentUser.id);
+  await loadProfile(); loadWorkers();
+  showToast('✅ Perfil de Modelo guardado');
 }
 async function setWorkerOnline(on) {
   localStorage.setItem('fendyx_online_intent', on ? '1' : '0');
@@ -115,6 +156,11 @@ async function submitKycDocs(e) {
 }
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
+  // Verificación obligatoria para llamar (salvo admin)
+  if (currentProfile.role !== 'admin' && currentProfile.kyc_status !== 'approved') {
+    showToast('🪪 Verifica tu identidad (cédula + rostro) en Mi Perfil para llamar');
+    showSection('profile'); return;
+  }
   rate = parseFloat(rate) || 0.2;
   const { data: wk } = await db.from('profiles').select('is_online, kyc_status').eq('id', workerId).single();
   if (!wk || wk.kyc_status !== 'approved') { showToast('❌ No verificada'); return; }

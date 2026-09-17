@@ -1,5 +1,12 @@
 'use strict';
 let adminUsersCache = [], kycTarget = null;
+const LOCAL_LEVELS = [
+  { level: 1, name: 'Bronce', rate: 0.2 },
+  { level: 2, name: 'Plata', rate: 0.7 },
+  { level: 3, name: 'Oro', rate: 1.2 },
+  { level: 4, name: 'Platino', rate: 2.0 },
+  { level: 5, name: 'Diamante', rate: 3.0 }
+];
 
 async function loadAdmin() {
   if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; }
@@ -14,8 +21,8 @@ function injectAdminExtras() {
     <div id="adminPurgeRow" class="row-buttons" style="margin-top:16px;flex-wrap:wrap">
       <button class="btn-small danger" onclick="purgeActivity()">🗑 Purgar actividad</button>
       <button class="btn-small danger" onclick="purgeChats()">💬 Borrar TODOS los chats</button>
-      <button class="btn-small danger" onclick="purgePanic()">🆘 Borrar alertas de pánico</button>
-      <button class="btn-small danger" onclick="purgeCalls()">📞 Borrar historial de llamadas</button>
+      <button class="btn-small danger" onclick="purgePanic()">🆘 Borrar pánico</button>
+      <button class="btn-small danger" onclick="purgeCalls()">📞 Borrar llamadas</button>
     </div>`);
   if (!document.getElementById('modal-userfile')) {
     const m = document.createElement('div'); m.id = 'modal-userfile'; m.className = 'modal hidden';
@@ -24,30 +31,31 @@ function injectAdminExtras() {
   }
 }
 async function purgeActivity() {
-  if (!confirm('Se BORRARÁN el registro de actividad y el historial de transacciones. Los saldos NO se afectan. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁN actividad y transacciones. Los saldos NO se afectan. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_logs');
   if (error) { showToast('❌ ' + error.message); return; }
   showToast('🗑 Actividad purgada: ' + data); loadAdminOverview();
 }
 async function purgeChats() {
-  if (!confirm('Se BORRARÁN TODOS los mensajes y conversaciones de TODOS los usuarios. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁN TODOS los mensajes de TODOS los usuarios. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_chats');
   if (error) { showToast('❌ ' + error.message); return; }
   showToast('💬 Chats eliminados: ' + data);
 }
 async function purgePanic() {
-  if (!confirm('Se BORRARÁ todo el historial de alertas de pánico. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁ historial de alertas de pánico. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_panic');
   if (error) { showToast('❌ ' + error.message); return; }
-  showToast('🆘 Alertas de pánico borradas: ' + data);
+  showToast('🆘 Pánico borrado: ' + data);
   if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety();
 }
 async function purgeCalls() {
-  if (!confirm('Se BORRARÁ todo el historial de videollamadas. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁ historial de videollamadas. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_calls');
   if (error) { showToast('❌ ' + error.message); return; }
-  showToast('📞 Historial de llamadas borrado: ' + data); loadAdminOverview();
+  showToast('📞 Llamadas borradas: ' + data); loadAdminOverview();
 }
+
 function switchAdminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
@@ -78,7 +86,7 @@ async function loadAdminOverview() {
   document.getElementById('kpiCalls').textContent = c.count || 0;
   document.getElementById('activityFeed').innerHTML = (tx.data || []).map(x =>
     `<div class="tx-item"><div><b>${x.profiles?.email || '—'}</b><small>${x.description || x.type}</small></div><span class="tx-amount ${x.amount >= 0 ? 'positive' : 'negative'}">${x.amount >= 0 ? '+' : ''}${x.amount}</span></div>`).join('')
-    || '<p class="empty-state">Sin actividad (puedes purgarla abajo)</p>';
+    || '<p class="empty-state">Sin actividad</p>';
 }
 async function uploadLogo(e) {
   const file = e.target.files[0]; if (!file) return;
@@ -101,9 +109,10 @@ async function loadAdminUsers() {
 }
 function renderAdminUsers() {
   const q = (document.getElementById('adminUsersSearch').value || '').toLowerCase();
-  const rows = adminUsersCache.filter(u => !q || (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q));
-  document.getElementById('adminUsersTable').innerHTML = rows.map(u =>
-    `<tr><td><b>${u.full_name || '—'}</b><br><small class="dim">${u.email}</small></td>
+  const rows = adminUsersCache.filter(u => !q || (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q) || (u.model_name || '').toLowerCase().includes(q));
+  document.getElementById('adminUsersTable').innerHTML = rows.map(u => {
+    const displayName = u.model_name ? `${u.model_name} <small class="dim">(${u.full_name || '—'})</small>` : (u.full_name || '—');
+    return `<tr><td><b>${displayName}</b><br><small class="dim">${u.email}</small></td>
      <td><select class="btn-small" onchange="changeUserRole('${u.id}', this.value)" ${u.role === 'admin' ? 'disabled' : ''}>
         ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
      <td>${u.unlimited_tokens ? '∞' : parseFloat(u.tokens_balance || 0).toFixed(2)}${u.tokens_locked ? ' 🔒' : ''}${parseFloat(u.tokens_retained || 0) > 0 ? ' ⏸' + u.tokens_retained : ''}</td>
@@ -111,15 +120,16 @@ function renderAdminUsers() {
      <td>
        <button class="btn-small" onclick="openUserFile('${u.id}')">👁 Ficha</button>
        <button class="btn-small" onclick="changeUserPass('${u.email}')">🔑</button>
-       ${u.role !== 'admin' ? `<button class="btn-small danger" onclick="deleteUserFully('${u.id}','${(u.email || '').replace(/'/g, '')}')">🗑 Eliminar</button>` : ''}
+       ${u.role !== 'admin' ? `<button class="btn-small danger" onclick="deleteUserFully('${u.id}','${(u.email || '').replace(/'/g, '')}')">🗑</button>` : ''}
        ${u.role !== 'admin' ? (u.is_banned ? `<button class="btn-small success" onclick="toggleBan('${u.id}',false)">Desbanear</button>` : `<button class="btn-small danger" onclick="toggleBan('${u.id}',true)">Banear</button>`) : ''}
-     </td></tr>`).join('');
+     </td></tr>`;
+  }).join('');
 }
 async function deleteUserFully(id, email) {
-  if (!confirm('ELIMINAR POR COMPLETO a ' + email + ' de la BD (perfil, chats, pedidos, tokens, todo). Su correo quedará LIBRE para registrarse de nuevo. ¿Continuar?')) return;
+  if (!confirm('ELIMINAR POR COMPLETO a ' + email + ' de la BD. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_delete_user', { p_uid: id });
   if (error || (data && data.startsWith('ERROR'))) { showToast('❌ ' + (data || error.message)); return; }
-  showToast('🗑 Usuario eliminado por completo'); loadAdminUsers(); loadAdminOverview();
+  showToast('🗑 Usuario eliminado'); loadAdminUsers(); loadAdminOverview();
 }
 
 async function openUserFile(id) {
@@ -132,22 +142,31 @@ async function openUserFile(id) {
     db.from('panic_alerts').select('*', { count: 'exact', head: true }).eq('user_id', id)
   ]);
   const d = rd.data || {};
-  document.getElementById('ufTitle').textContent = '👁 Ficha: ' + (u.full_name || u.email);
+  document.getElementById('ufTitle').textContent = '👁 Ficha: ' + (u.model_name || u.full_name || u.email);
   document.getElementById('ufBody').innerHTML = `
     <div class="dim" style="text-align:left">
-      <b>Email:</b> ${u.email}<br><b>Género:</b> ${u.gender || '—'} · <b>Edad:</b> ${u.age || '—'}<br>
+      <b>Email:</b> ${u.email}<br>
+      <b>Nombre real (cédula):</b> ${u.full_name || '—'}<br>
+      <b>Nombre artístico:</b> ${u.model_name || '—'}<br>
+      <b>Género:</b> ${u.gender || '—'} · <b>Edad:</b> ${u.age || '—'}<br>
       <b>WhatsApp:</b> ${u.whatsapp ? `<a target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">${u.whatsapp}</a>` : '—'}<br>
       <b>Rol:</b> ${ROLE_LABELS[u.role]} · <b>KYC:</b> ${u.kyc_status} · <b>Verificado:</b> ${u.is_verified ? 'Sí' : 'No'}<br>
       <b>Ocupación:</b> ${u.occupation || '—'} · <b>Zodiaco:</b> ${u.zodiac || '—'}<br>
       <b>Especialidad:</b> ${d.specialty || '—'} · <b>Nivel:</b> ${levelInfo(d.worker_level).name} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || '—'}/min<br>
-      <b>Intereses:</b> ${(u.interests || []).join(', ') || '—'}<br><b>Preferencias:</b> ${(u.preferences || []).join(', ') || '—'}<br>
+      <b>Intereses:</b> ${(u.interests || []).join(', ') || '—'}<br>
+      <b>Preferencias:</b> ${(u.preferences || []).join(', ') || '—'}<br>
       <b>Bio:</b> ${u.bio || d.bio || '—'}<br>
-      <b>Código referido:</b> ${u.referral_code || '—'} · <b>Referido por:</b> ${u.referred_by ? 'Sí' : 'No'}<br>
       <b>Pedidos:</b> ${orders.count || 0} · <b>Transacciones:</b> ${txs.count || 0} · <b>Reportes:</b> ${reps.count || 0} · <b>Pánicos:</b> ${panics.count || 0}<br>
       ${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : ''}
       ${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : ''}
       ${(u.gallery_urls || []).map(g => `<img class="kyc-img" src="${g}" onclick="window.open('${g}')">`).join('')}
     </div>
+    ${u.role === 'remote_worker' ? `
+    <h4 class="sub-title">🎭 Nombre artístico</h4>
+    <div class="owner-form">
+      <input type="text" id="ufModelName" placeholder="Nombre artístico / de modelo" value="${u.model_name || ''}">
+      <button class="btn-primary" onclick="saveModelName('${u.id}')">💾 Guardar nombre artístico</button>
+    </div>` : ''}
     <h4 class="sub-title">◈ Control de tokens</h4>
     <div class="owner-form" style="text-align:left">
       <div class="dim">Saldo: <b>${parseFloat(u.tokens_balance || 0).toFixed(2)}</b> · Bloqueado: <b>${u.tokens_locked ? 'SÍ 🔒' : 'No'}</b> · Retención: <b>${parseFloat(u.tokens_retained || 0).toFixed(2)}</b></div>
@@ -177,6 +196,14 @@ async function saveUserTokens(uid) {
   const { data, error } = await db.rpc('admin_set_tokens', { p_uid: uid, p_balance: balance, p_locked: locked, p_retained: retained, p_reason: reason });
   if (error || (data && data.startsWith('ERROR'))) { showToast('❌ ' + (data || error.message)); return; }
   showToast('✅ Tokens actualizados'); closeModal('modal-userfile'); loadAdminUsers();
+}
+async function saveModelName(uid) {
+  const name = document.getElementById('ufModelName').value.trim();
+  if (!name) { showToast('Escribe el nombre artístico'); return; }
+  await db.from('profiles').update({ model_name: name }).eq('id', uid);
+  showToast('✅ Nombre artístico guardado');
+  const u = adminUsersCache.find(x => x.id === uid); if (u) u.model_name = name;
+  closeModal('modal-userfile'); loadAdminUsers();
 }
 
 async function changeUserRole(id, newRole) {
@@ -296,10 +323,11 @@ async function resolveWithdrawal(id, status) {
 async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u =>
-    `<div class="row-item"><div class="row-main"><b>${u.full_name} · ${u.age || '?'} años</b><small>${u.whatsapp || '—'} · ${u.email}</small>
+    `<div class="row-item"><div class="row-main"><b>${u.model_name || u.full_name || '—'} ${u.age ? '· ' + u.age + ' años' : ''}</b><small>Real: ${u.full_name || '—'} · ${u.email}</small>
+     <small>${u.whatsapp || '—'}${u.model_name ? ' · 🎭 ' + u.model_name : ''}</small>
      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : ''}</div>
      ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">💬</a>` : ''}</div>
-     <div class="row-actions"><button class="btn-small success" onclick="startKyc('${u.id}','${(u.full_name || '').replace(/'/g, '')}')">🎥</button><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
+     <div class="row-actions"><button class="btn-small success" onclick="startKyc('${u.id}','${(u.model_name || u.full_name || '').replace(/'/g, '')}')">🎥</button><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
     || '<p class="empty-state">Nadie pendiente 🎉</p>';
 }
 async function approveKyc(id) { await db.from('profiles').update({ kyc_status: 'approved', is_verified: true, is_active: true }).eq('id', id); showToast('✅ Verificada'); loadKycList(); }
@@ -313,18 +341,41 @@ async function startKyc(userId, name) {
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); showToast('✅ Verificada'); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
+// TRABAJADORAS: selector de nivel GARANTIZADO (con fallback LOCAL_LEVELS si la BD falla)
 async function loadWorkersAdmin() {
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
-  const lv = await db.from('worker_levels').select('*').order('level');
+  let lv = LOCAL_LEVELS;
+  try {
+    const r = await db.from('worker_levels').select('*').order('level');
+    if (r.data && r.data.length) lv = r.data;
+  } catch (e) { /* usamos fallback */ }
   document.getElementById('adminWorkersList').innerHTML = (data || []).map(w => {
     const rd = w.role_details?.[0];
-    return `<div class="row-item"><div class="row-main"><b>${w.full_name}</b><small>${levelInfo(rd?.worker_level).name} · ◈ ${rd?.rate_per_minute}/min</small></div>
-     <div class="row-actions"><select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">${(lv.data || []).map(l => `<option value="${l.level}" ${rd?.worker_level === l.level ? 'selected' : ''}>${l.level}. ${l.name}</option>`).join('')}</select>
-     <input type="number" step="0.1" min="0.2" max="3" value="${rd?.rate_per_minute || 0.2}" style="width:80px" class="btn-small" id="rate_${w.id}"><button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button></div></div>`;
+    const curLevel = rd?.worker_level || 1;
+    const curRate = parseFloat(rd?.rate_per_minute) || levelInfo(curLevel).rate;
+    return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>Real: ${w.full_name} · ${levelInfo(curLevel).name} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
+     <div class="row-actions">
+       <select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">
+         ${lv.map(l => `<option value="${l.level}" ${curLevel === l.level ? 'selected' : ''}>${l.level}. ${l.name} ($${l.rate})</option>`).join('')}
+       </select>
+       <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
+       <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button>
+     </div></div>`;
   }).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
-async function setWorkerLevel(id, level) { const { data: l } = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single(); await db.from('role_details').update({ worker_level: l.level, rate_per_minute: l.rate }).eq('user_id', id); showToast('✅ ' + l.name); loadWorkersAdmin(); }
-async function setWorkerRate(id) { const rate = parseFloat(document.getElementById('rate_' + id).value); if (isNaN(rate) || rate < 0.2 || rate > 3) { showToast('0.2 a 3'); return; } await db.from('role_details').update({ rate_per_minute: rate }).eq('user_id', id); showToast('✅ Tarifa'); loadWorkersAdmin(); }
+async function setWorkerLevel(id, level) {
+  let lvl = LOCAL_LEVELS.find(x => x.level === parseInt(level));
+  try { const r = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single(); if (r.data) lvl = r.data; } catch (e) {}
+  if (!lvl) { showToast('Nivel inválido'); return; }
+  await db.from('role_details').update({ worker_level: lvl.level, rate_per_minute: lvl.rate }).eq('user_id', id);
+  showToast('✅ ' + lvl.name); loadWorkersAdmin();
+}
+async function setWorkerRate(id) {
+  const rate = parseFloat(document.getElementById('rate_' + id).value);
+  if (isNaN(rate) || rate < 0.2 || rate > 3) { showToast('Rango 0.2 a 3'); return; }
+  await db.from('role_details').update({ rate_per_minute: rate }).eq('user_id', id);
+  showToast('✅ Tarifa: ◈ ' + rate + '/min'); loadWorkersAdmin();
+}
 
 async function runAudit() {
   const q = document.getElementById('auditSearch').value.trim();

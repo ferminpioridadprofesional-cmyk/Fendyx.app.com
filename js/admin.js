@@ -17,6 +17,7 @@ function injectAdminExtras() {
   if (!document.getElementById('modal-userfile')) { const m = document.createElement('div'); m.id = 'modal-userfile'; m.className = 'modal hidden'; m.innerHTML = `<div class="modal-content wide"><div class="modal-head"><h3 id="ufTitle">Ficha</h3><button class="modal-close" onclick="closeModal('modal-userfile')">✕</button></div><div id="ufBody"></div></div>`; document.body.appendChild(m); }
   const tabs = document.querySelector('.admin-tabs');
   if (tabs && !tabs.querySelector('[data-modules-tab]')) { tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`); const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel'; p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado (también de la barra inferior).</p><div id="modulesConfigList" class="list-compact"></div>`; document.getElementById('section-admin').appendChild(p4); }
+  if (tabs && !tabs.querySelector('[data-supervision-tab]')) { tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-supervision-tab onclick="switchAdminTab('supervision',this)">👁 Supervisión</button>`); const p5 = document.createElement('div'); p5.id = 'admin-supervision'; p5.className = 'admin-panel'; p5.innerHTML = `<p class="dim">Llamadas en vivo ahora mismo. Entra en modo mosaico sin que los participantes lo vean.</p><div id="liveCallsList" class="list-compact"></div>`; document.getElementById('section-admin').appendChild(p5); }
 }
 async function purgeActivity() { if (!confirm('¿Borrar actividad y transacciones? Los saldos NO se afectan.')) return; const { data, error } = await db.rpc('admin_purge_logs'); if (error) return showToast('❌ ' + error.message); showToast('🗑 Purgado: ' + data); loadAdminOverview(); }
 async function purgeChats() { if (!confirm('¿Borrar TODOS los chats?')) return; const { data, error } = await db.rpc('admin_purge_chats'); if (error) return showToast('❌ ' + error.message); showToast('💬 Eliminados: ' + data); }
@@ -26,7 +27,7 @@ function switchAdminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('admin-' + tab)?.classList.add('active');
-  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety, modules: loadApartados };
+  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety, modules: loadApartados, supervision: loadSupervision };
   loaders[tab]?.();
 }
 function startSafetyRealtime() { if (window._safetyCh) return; window._safetyCh = db.channel('fendyx-safety').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); }).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); }).subscribe(); }
@@ -108,8 +109,6 @@ async function loadAdminContent() { const [r, n, m] = await Promise.all([db.from
 async function deleteContent(t, id) { if (!confirm('¿Eliminar?')) return; await db.from(t).delete().eq('id', id); loadAdminContent(); }
 async function loadAdminWithdrawals() { const { data } = await db.from('withdrawals').select('*, profiles(email, full_name)').order('created_at', { ascending: false }); document.getElementById('withdrawalsAdmin').innerHTML = (data || []).map(w => `<div class="row-item"><div class="row-main"><b>${w.profiles?.full_name} · ◈ ${w.amount}</b><small>${w.method}</small></div><div class="row-actions">${w.status === 'pending' ? `<button class="btn-small success" onclick="resolveWithdrawal('${w.id}','approved')">✅</button><button class="btn-small danger" onclick="resolveWithdrawal('${w.id}','rejected')">↩️</button>` : `<span class="order-status ${w.status === 'approved' ? 'st-delivered' : 'st-cancelled'}">${w.status}</span>`}</div></div>`).join('') || '<p>Sin retiros</p>'; }
 async function resolveWithdrawal(id, st) { const { data: w } = await db.from('withdrawals').select('*').eq('id', id).single(); if (!w || w.status !== 'pending') return; if (st === 'rejected') await db.rpc('credit_tokens', { p_to: w.user_id, p_amount: parseFloat(w.amount), p_desc: 'Reembolso' }); await db.from('withdrawals').update({ status: st }).eq('id', id); loadAdminWithdrawals(); }
-
-// KYC de TODOS: trabajadoras Y clientes (hombres que quieren llamar)
 async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u => `<div class="row-item"><div class="row-main">
@@ -118,18 +117,11 @@ async function loadKycList() {
       <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : '⚠️ sin rostro'}</div></div>
       <div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅ +18</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('') || '<p class="empty-state">Nadie pendiente 🎉</p>';
 }
-async function approveKyc(id) {
-  const { data: u } = await db.from('profiles').select('role').eq('id', id).single();
-  const up = { kyc_status: 'approved', is_verified: true };
-  if (u?.role === 'remote_worker') up.is_active = true;
-  await db.from('profiles').update(up).eq('id', id);
-  showToast('✅ Verificado y habilitado'); loadKycList();
-}
+async function approveKyc(id) { const { data: u } = await db.from('profiles').select('role').eq('id', id).single(); const up = { kyc_status: 'approved', is_verified: true }; if (u?.role === 'remote_worker') up.is_active = true; await db.from('profiles').update(up).eq('id', id); showToast('✅ Verificado y habilitado'); loadKycList(); }
 async function rejectKyc(id) { const n = prompt('Razón (edad no verificada, foto obstruida, etc.):'); if (!n) return; await db.from('profiles').update({ kyc_status: 'rejected', kyc_note: n }).eq('id', id); showToast('❌ Rechazado'); loadKycList(); }
 async function startKyc(userId, name) { kycTarget = userId; await loadScript('calls.js'); document.getElementById('kycTitle').textContent = '🎥 KYC: ' + name; document.getElementById('kycVerifyBtn').classList.remove('hidden'); await startWebCall('FENDYX_KYC_' + userId.slice(0, 8), { rate: 0, rowId: null, asClient: true }); }
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
-
 async function loadWorkersAdmin() {
   const { data, error } = await db.rpc('admin_get_workers');
   if (error) { document.getElementById('adminWorkersList').innerHTML = '<p class="empty-state">❌ ' + error.message + '</p>'; return; }
@@ -150,4 +142,10 @@ function loadApartados() {
   document.getElementById('modulesConfigList').innerHTML = MODULE_DEFS.map(d => { const st = cfg[d.id] || 'on'; return `<div class="row-item"><div class="row-main"><b>${MODULE_ICONS[d.id] || ''} ${d.n}</b><small>${st === 'on' ? '🟢 Activo' : st === 'off' ? '🔒 Próximamente' : '🙈 Oculto'}</small></div><select class="btn-small" onchange="saveModuleState('${d.id}', this.value)"><option value="on" ${st === 'on' ? 'selected' : ''}>🟢 Activo</option><option value="off" ${st === 'off' ? 'selected' : ''}>🔒 Próximamente</option><option value="hidden" ${st === 'hidden' ? 'selected' : ''}>🙈 Oculto</option></select></div>`; }).join('');
 }
 async function saveModuleState(id, state) { const cfg = Object.assign({}, window._modulesConfig || {}); cfg[id] = state; await db.from('app_branding').update({ modules_config: cfg, updated_at: new Date().toISOString() }).eq('id', 1); window._modulesConfig = cfg; showToast('✅ Apartado actualizado para todos'); loadApartados(); loadModules(); }
+// ===== SUPERVISIÓN EN VIVO (mosaico invisible) =====
+async function loadSupervision() {
+  const { data } = await db.from('video_calls').select('*, c:profiles!video_calls_client_id_fkey(full_name,model_name), w:profiles!video_calls_worker_id_fkey(full_name,model_name)').eq('status', 'active').order('started_at', { ascending: false });
+  document.getElementById('liveCallsList').innerHTML = (data || []).map(c => `<div class="row-item"><div class="row-main"><b>📹 ${(c.w?.model_name || c.w?.full_name || 'Modelo')} ↔ ${(c.c?.model_name || c.c?.full_name || 'Cliente')}</b><small>◈ ${c.rate_per_minute}/min · desde ${new Date(c.started_at).toLocaleTimeString()}</small></div><div class="row-actions"><button class="btn-small success" onclick="watchCall('${c.room_id}')">👁 Ver mosaico</button></div></div>`).join('') || '<p class="empty-state">No hay llamadas en vivo</p>';
+}
+async function watchCall(roomId) { await loadScript('calls.js'); await startAdminMonitor(roomId); }
 async function runAudit() { const q = document.getElementById('auditSearch').value.trim(); const box = document.getElementById('auditResults'); if (q.length < 3) { box.innerHTML = '<p>Mín 3 caracteres</p>'; return; } const { data } = await db.from('messages').select('*, profiles!messages_sender_id_fkey(email)').ilike('content', '%' + q + '%').limit(50); box.innerHTML = (data || []).map(m => `<div class="row-item"><div class="row-main"><b>${m.profiles?.email || '—'}</b><div>…${m.content}…</div></div><button class="btn-small danger" onclick="toggleBan('${m.sender_id}',true)">🚫</button></div>`).join('') || '<p>Sin coincidencias</p>'; }

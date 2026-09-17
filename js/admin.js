@@ -1,45 +1,27 @@
 'use strict';
 let adminUsersCache = [], kycTarget = null;
 const LEVELS = [
-  { level: 1, ico: '🥉', name: 'Bronce', rate: 0.2 },
-  { level: 2, ico: '🥈', name: 'Plata', rate: 0.7 },
-  { level: 3, ico: '🥇', name: 'Oro', rate: 1.2 },
-  { level: 4, ico: '💠', name: 'Platino', rate: 2.0 },
+  { level: 1, ico: '🥉', name: 'Bronce', rate: 0.2 }, { level: 2, ico: '🥈', name: 'Plata', rate: 0.7 },
+  { level: 3, ico: '🥇', name: 'Oro', rate: 1.2 }, { level: 4, ico: '💠', name: 'Platino', rate: 2.0 },
   { level: 5, ico: '💎', name: 'Diamante', rate: 3.0 }
 ];
-
-async function loadAdmin() {
-  if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; }
-  startSafetyRealtime(); injectAdminExtras(); loadAdminOverview();
-}
+async function loadAdmin() { if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; } startSafetyRealtime(); injectAdminExtras(); loadAdminOverview(); }
 function injectAdminExtras() {
   if (document.getElementById('adminPurgeRow')) return;
   const ov = document.getElementById('admin-overview');
-  if (ov) ov.insertAdjacentHTML('beforeend', `
-    <div id="adminPurgeRow" class="row-buttons" style="margin-top:16px;flex-wrap:wrap">
+  if (ov) ov.insertAdjacentHTML('beforeend', `<div id="adminPurgeRow" class="row-buttons" style="margin-top:16px;flex-wrap:wrap">
       <button class="btn-small danger" onclick="purgeActivity()">🗑 Purgar actividad</button>
       <button class="btn-small danger" onclick="purgeChats()">💬 Borrar TODOS los chats</button>
       <button class="btn-small danger" onclick="purgePanic()">🆘 Borrar pánico</button>
-      <button class="btn-small danger" onclick="purgeCalls()">📞 Borrar llamadas</button>
-    </div>`);
-  if (!document.getElementById('modal-userfile')) {
-    const m = document.createElement('div'); m.id = 'modal-userfile'; m.className = 'modal hidden';
-    m.innerHTML = `<div class="modal-content wide"><div class="modal-head"><h3 id="ufTitle">Ficha</h3><button class="modal-close" onclick="closeModal('modal-userfile')">✕</button></div><div id="ufBody"></div></div>`;
-    document.body.appendChild(m);
-  }
+      <button class="btn-small danger" onclick="purgeCalls()">📞 Borrar llamadas</button></div>`);
+  if (!document.getElementById('modal-userfile')) { const m = document.createElement('div'); m.id = 'modal-userfile'; m.className = 'modal hidden'; m.innerHTML = `<div class="modal-content wide"><div class="modal-head"><h3 id="ufTitle">Ficha</h3><button class="modal-close" onclick="closeModal('modal-userfile')">✕</button></div><div id="ufBody"></div></div>`; document.body.appendChild(m); }
   const tabs = document.querySelector('.admin-tabs');
-  if (tabs && !tabs.querySelector('[data-modules-tab]')) {
-    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`);
-    const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel';
-    p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado de la app.</p><div id="modulesConfigList" class="list-compact"></div>`;
-    document.getElementById('section-admin').appendChild(p4);
-  }
+  if (tabs && !tabs.querySelector('[data-modules-tab]')) { tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`); const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel'; p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado (también de la barra inferior).</p><div id="modulesConfigList" class="list-compact"></div>`; document.getElementById('section-admin').appendChild(p4); }
 }
 async function purgeActivity() { if (!confirm('¿Borrar actividad y transacciones? Los saldos NO se afectan.')) return; const { data, error } = await db.rpc('admin_purge_logs'); if (error) return showToast('❌ ' + error.message); showToast('🗑 Purgado: ' + data); loadAdminOverview(); }
 async function purgeChats() { if (!confirm('¿Borrar TODOS los chats?')) return; const { data, error } = await db.rpc('admin_purge_chats'); if (error) return showToast('❌ ' + error.message); showToast('💬 Eliminados: ' + data); }
 async function purgePanic() { if (!confirm('¿Borrar historial de pánico?')) return; const { data, error } = await db.rpc('admin_purge_panic'); if (error) return showToast('❌ ' + error.message); showToast('🆘 Borrado: ' + data); if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); }
 async function purgeCalls() { if (!confirm('¿Borrar historial de llamadas?')) return; const { data, error } = await db.rpc('admin_purge_calls'); if (error) return showToast('❌ ' + error.message); showToast('📞 Borrado: ' + data); loadAdminOverview(); }
-
 function switchAdminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
@@ -47,21 +29,9 @@ function switchAdminTab(tab, btn) {
   const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety, modules: loadApartados };
   loaders[tab]?.();
 }
-function startSafetyRealtime() {
-  if (window._safetyCh) return;
-  window._safetyCh = db.channel('fendyx-safety')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
-    .subscribe();
-}
-
+function startSafetyRealtime() { if (window._safetyCh) return; window._safetyCh = db.channel('fendyx-safety').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); }).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); }).subscribe(); }
 async function loadAdminOverview() {
-  const [u, o, c, tx] = await Promise.all([
-    db.from('profiles').select('tokens_balance'),
-    db.from('orders').select('*', { count: 'exact', head: true }),
-    db.from('video_calls').select('*', { count: 'exact', head: true }),
-    db.from('token_transactions').select('*, profiles(email)').order('created_at', { ascending: false }).limit(8)
-  ]);
+  const [u, o, c, tx] = await Promise.all([db.from('profiles').select('tokens_balance'), db.from('orders').select('*', { count: 'exact', head: true }), db.from('video_calls').select('*', { count: 'exact', head: true }), db.from('token_transactions').select('*, profiles(email)').order('created_at', { ascending: false }).limit(8)]);
   const users = u.data || [];
   document.getElementById('kpiUsers').textContent = users.length;
   document.getElementById('kpiTokens').textContent = users.reduce((s, p) => s + parseFloat(p.tokens_balance || 0), 0).toFixed(0);
@@ -71,7 +41,6 @@ async function loadAdminOverview() {
 }
 async function uploadLogo(e) { const f = e.target.files[0]; if (!f) return; const p = 'logo/logo_' + Date.now() + '.' + f.name.split('.').pop(); const { error } = await db.storage.from('fendyx-assets').upload(p, f); if (error) return showToast('❌ ' + error.message); await db.from('app_branding').update({ logo_url: db.storage.from('fendyx-assets').getPublicUrl(p).data.publicUrl, updated_at: new Date().toISOString() }).eq('id', 1); await loadBranding(); showToast('✅ Logo actualizado'); }
 async function saveAppName() { const n = document.getElementById('adminAppName').value.trim() || 'FENDYX'; await db.from('app_branding').update({ app_name: n, updated_at: new Date().toISOString() }).eq('id', 1); await loadBranding(); showToast('✅ Nombre actualizado'); }
-
 async function loadAdminUsers() { const { data } = await db.from('profiles').select('*').order('created_at', { ascending: false }); adminUsersCache = data || []; renderAdminUsers(); }
 function renderAdminUsers() {
   const q = (document.getElementById('adminUsersSearch').value || '').toLowerCase();
@@ -88,16 +57,9 @@ function renderAdminUsers() {
   }).join('');
 }
 async function deleteUserFully(id, email) { if (!confirm('ELIMINAR POR COMPLETO a ' + email + '?')) return; const { data, error } = await db.rpc('admin_delete_user', { p_uid: id }); if (error || (data && data.startsWith('ERROR'))) return showToast('❌ ' + (data || error.message)); showToast('🗑 Eliminado'); loadAdminUsers(); loadAdminOverview(); }
-
 async function openUserFile(id) {
   const u = adminUsersCache.find(x => x.id === id); if (!u) return;
-  const [rd, orders, txs, reps, panics] = await Promise.all([
-    db.from('role_details').select('*').eq('user_id', id).single(),
-    db.from('orders').select('*', { count: 'exact', head: true }).eq('customer_id', id),
-    db.from('token_transactions').select('*', { count: 'exact', head: true }).eq('user_id', id),
-    db.from('reports').select('*', { count: 'exact', head: true }).eq('target_user_id', id),
-    db.from('panic_alerts').select('*', { count: 'exact', head: true }).eq('user_id', id)
-  ]);
+  const [rd, orders, txs, reps, panics] = await Promise.all([db.from('role_details').select('*').eq('user_id', id).single(), db.from('orders').select('*', { count: 'exact', head: true }).eq('customer_id', id), db.from('token_transactions').select('*', { count: 'exact', head: true }).eq('user_id', id), db.from('reports').select('*', { count: 'exact', head: true }).eq('target_user_id', id), db.from('panic_alerts').select('*', { count: 'exact', head: true }).eq('user_id', id)]);
   const d = rd.data || {}; const lvNum = Math.min(5, Math.max(1, parseInt(d.worker_level) || 1));
   document.getElementById('ufTitle').textContent = '👁 Ficha: ' + (u.model_name || u.full_name || u.email);
   document.getElementById('ufBody').innerHTML = `<div class="dim" style="text-align:left">
@@ -120,26 +82,11 @@ async function openUserFile(id) {
   openModal('modal-userfile');
 }
 function ufAdj(s) { const b = document.getElementById('ufBalance'); const a = parseFloat(document.getElementById('ufAdjAmt').value) || 0; b.value = (parseFloat(b.value) + s * a).toFixed(2); }
-async function saveUserTokens(uid) {
-  const { data, error } = await db.rpc('admin_set_tokens', { p_uid: uid, p_balance: parseFloat(document.getElementById('ufBalance').value) || 0, p_locked: document.getElementById('ufLocked').checked, p_retained: parseFloat(document.getElementById('ufRetained').value) || 0, p_reason: document.getElementById('ufReason').value || 'Ajuste' });
-  if (error || (data && data.startsWith('ERROR'))) return showToast('❌ ' + (data || error.message));
-  showToast('✅ Tokens actualizados'); closeModal('modal-userfile'); loadAdminUsers();
-}
+async function saveUserTokens(uid) { const { data, error } = await db.rpc('admin_set_tokens', { p_uid: uid, p_balance: parseFloat(document.getElementById('ufBalance').value) || 0, p_locked: document.getElementById('ufLocked').checked, p_retained: parseFloat(document.getElementById('ufRetained').value) || 0, p_reason: document.getElementById('ufReason').value || 'Ajuste' }); if (error || (data && data.startsWith('ERROR'))) return showToast('❌ ' + (data || error.message)); showToast('✅ Tokens actualizados'); closeModal('modal-userfile'); loadAdminUsers(); }
 async function saveModelName(uid) { const n = document.getElementById('ufModelName').value.trim(); if (!n) return showToast('Escribe el nombre'); await db.from('profiles').update({ model_name: n }).eq('id', uid); showToast('✅ Guardado'); const u = adminUsersCache.find(x => x.id === uid); if (u) u.model_name = n; closeModal('modal-userfile'); loadAdminUsers(); }
-
-async function changeUserRole(id, newRole) {
-  const u = adminUsersCache.find(x => x.id === id); if (!u || u.role === newRole) return;
-  if (u.role === 'admin') return showToast('❌ No puedes cambiar el rol del admin');
-  if (newRole === 'remote_worker' && u.gender !== 'female') return showToast('❌ Solo mujeres');
-  await db.from('profiles').update({ role: newRole, kyc_status: newRole === 'remote_worker' ? 'pending' : 'none' }).eq('id', id);
-  const payload = { user_id: id, role_type: newRole };
-  if (newRole === 'remote_worker') Object.assign(payload, { rate_per_minute: 0.2, worker_level: 1 });
-  await db.from('role_details').upsert(payload, { onConflict: 'user_id' });
-  showToast('✅ Rol cambiado'); loadAdminUsers();
-}
+async function changeUserRole(id, newRole) { const u = adminUsersCache.find(x => x.id === id); if (!u || u.role === newRole) return; if (u.role === 'admin') return showToast('❌ No puedes cambiar el rol del admin'); if (newRole === 'remote_worker' && u.gender !== 'female') return showToast('❌ Solo mujeres'); await db.from('profiles').update({ role: newRole, kyc_status: newRole === 'remote_worker' ? 'pending' : 'none' }).eq('id', id); const payload = { user_id: id, role_type: newRole }; if (newRole === 'remote_worker') Object.assign(payload, { rate_per_minute: 0.2, worker_level: 1 }); await db.from('role_details').upsert(payload, { onConflict: 'user_id' }); showToast('✅ Rol cambiado'); loadAdminUsers(); }
 async function changeUserPass(email) { const np = prompt('Nueva contraseña (mín 6):'); if (np === null) return; if (np.length < 6) return showToast('❌ Mín 6'); const np2 = prompt('Confirma:'); if (np !== np2) return showToast('❌ No coinciden'); const { data, error } = await db.rpc('admin_reset_password', { p_email: email, p_new: np }); if (error || (data && data.startsWith('ERROR'))) return showToast('❌ ' + (data || error.message)); showToast('✅ Contraseña cambiada'); }
 async function toggleBan(id, ban) { let r = null; if (ban) { r = prompt('Razón del baneo:'); if (!r || !r.trim()) return showToast('Razón obligatoria'); } await db.from('profiles').update({ is_banned: ban, ban_reason: ban ? r.trim() : null }).eq('id', id); showToast(ban ? '🚫 Baneado' : '✅ Desbaneado'); loadAdminUsers(); }
-
 async function loadSafety() {
   const { data: panics } = await db.from('panic_alerts').select('*, profiles(email, full_name)').order('created_at', { ascending: false }).limit(20);
   document.getElementById('panicList').innerHTML = (panics || []).map(p => `<div class="row-item"><div class="row-main"><b>🆘 ${p.profiles?.full_name || '—'}</b><small>${new Date(p.created_at).toLocaleString('es')}</small>${p.latitude ? `<a class="btn-small" target="_blank" href="https://www.google.com/maps?q=${p.latitude},${p.longitude}">🗺️</a>` : ''}</div><div class="row-actions">${p.status === 'active' ? `<button class="btn-small success" onclick="resolvePanic('${p.id}')">✅</button>` : '<span class="order-status st-delivered">Resuelta</span>'}</div></div>`).join('') || '<p class="empty-state">Sin alertas</p>';
@@ -148,7 +95,6 @@ async function loadSafety() {
 }
 async function resolvePanic(id) { await db.from('panic_alerts').update({ status: 'resolved' }).eq('id', id); loadSafety(); }
 async function closeReport(id) { await db.from('reports').update({ status: 'closed' }).eq('id', id); loadSafety(); }
-
 async function loadRechargeRequests() {
   const { data } = await db.from('recharge_requests').select('*, profiles(email, full_name)').order('created_at', { ascending: false });
   const pend = (data || []).filter(r => r.status === 'pending'); const rest = (data || []).filter(r => r.status !== 'pending');
@@ -156,18 +102,30 @@ async function loadRechargeRequests() {
 }
 async function approveRecharge(id) { const { data: r } = await db.from('recharge_requests').select('*, profiles(email, is_active)').eq('id', id).single(); if (!r || r.status !== 'pending') return; if (!confirm('¿Recibiste ◈ ' + r.amount + '?')) return; await db.rpc('credit_tokens', { p_to: r.user_id, p_amount: parseFloat(r.amount), p_desc: 'Recarga' }); await db.from('recharge_requests').update({ status: 'approved', verified_by: 'manual' }).eq('id', id); if (parseFloat(r.amount) >= 3 && !r.profiles?.is_active) { await db.from('profiles').update({ is_active: true }).eq('id', r.user_id); await db.rpc('claim_referral_reward', { p_referee: r.user_id }); } showToast('✅ Aprobada'); loadRechargeRequests(); loadAdminOverview(); }
 async function rejectRecharge(id) { const n = prompt('Razón:'); if (n === null) return; await db.from('recharge_requests').update({ status: 'rejected', note: n }).eq('id', id); showToast('❌ Rechazada'); loadRechargeRequests(); }
-
 async function adminAdjustTokens() { const email = document.getElementById('adminTokenEmail').value.trim().toLowerCase(); const amount = parseFloat(document.getElementById('adminTokenAmount').value); if (!email || !amount) return showToast('Completa datos'); const { data: u } = await db.from('profiles').select('*').eq('email', email).single(); if (!u) return showToast('❌ No encontrado'); await db.from('profiles').update({ tokens_balance: parseFloat(u.tokens_balance || 0) + amount }).eq('id', u.id); showToast('✅ Ajuste'); loadAdminTransactions(); }
 async function loadAdminTransactions() { const { data } = await db.from('token_transactions').select('*, profiles(email)').order('created_at', { ascending: false }).limit(50); document.getElementById('adminTransactions').innerHTML = (data || []).map(t => `<div class="tx-item"><div><b>${t.profiles?.email || '—'}</b><small>${t.description || t.type}</small></div><span class="tx-amount ${t.amount >= 0 ? 'positive' : 'negative'}">${t.amount >= 0 ? '+' : ''}${t.amount}</span></div>`).join('') || '<p class="empty-state">Sin transacciones</p>'; }
 async function loadAdminContent() { const [r, n, m] = await Promise.all([db.from('restaurants').select('id, name'), db.from('nightclubs').select('id, name'), db.from('marketplace_items').select('id, title')]); document.getElementById('adminRestaurants').innerHTML = (r.data || []).map(x => `<div class="row-item"><div class="row-main"><b>${x.name}</b></div><button class="btn-small danger" onclick="deleteContent('restaurants','${x.id}')">🗑</button></div>`).join('') || '<p>Vacío</p>'; document.getElementById('adminNightclubs').innerHTML = (n.data || []).map(x => `<div class="row-item"><div class="row-main"><b>${x.name}</b></div><button class="btn-small danger" onclick="deleteContent('nightclubs','${x.id}')">🗑</button></div>`).join('') || '<p>Vacío</p>'; document.getElementById('adminMarket').innerHTML = (m.data || []).map(x => `<div class="row-item"><div class="row-main"><b>${x.title}</b></div><button class="btn-small danger" onclick="deleteContent('marketplace_items','${x.id}')">🗑</button></div>`).join('') || '<p>Vacío</p>'; }
 async function deleteContent(t, id) { if (!confirm('¿Eliminar?')) return; await db.from(t).delete().eq('id', id); loadAdminContent(); }
-
 async function loadAdminWithdrawals() { const { data } = await db.from('withdrawals').select('*, profiles(email, full_name)').order('created_at', { ascending: false }); document.getElementById('withdrawalsAdmin').innerHTML = (data || []).map(w => `<div class="row-item"><div class="row-main"><b>${w.profiles?.full_name} · ◈ ${w.amount}</b><small>${w.method}</small></div><div class="row-actions">${w.status === 'pending' ? `<button class="btn-small success" onclick="resolveWithdrawal('${w.id}','approved')">✅</button><button class="btn-small danger" onclick="resolveWithdrawal('${w.id}','rejected')">↩️</button>` : `<span class="order-status ${w.status === 'approved' ? 'st-delivered' : 'st-cancelled'}">${w.status}</span>`}</div></div>`).join('') || '<p>Sin retiros</p>'; }
 async function resolveWithdrawal(id, st) { const { data: w } = await db.from('withdrawals').select('*').eq('id', id).single(); if (!w || w.status !== 'pending') return; if (st === 'rejected') await db.rpc('credit_tokens', { p_to: w.user_id, p_amount: parseFloat(w.amount), p_desc: 'Reembolso' }); await db.from('withdrawals').update({ status: st }).eq('id', id); loadAdminWithdrawals(); }
 
-async function loadKycList() { const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false }); document.getElementById('kycList').innerHTML = (data || []).map(u => `<div class="row-item"><div class="row-main"><b>${u.model_name || u.full_name}</b><small>${u.email}</small><div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}">` : ''}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}">` : ''}</div></div><div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('') || '<p>Nadie pendiente</p>'; }
-async function approveKyc(id) { await db.from('profiles').update({ kyc_status: 'approved', is_verified: true, is_active: true }).eq('id', id); showToast('✅ Verificada'); loadKycList(); }
-async function rejectKyc(id) { const n = prompt('Razón:'); if (!n) return; await db.from('profiles').update({ kyc_status: 'rejected', kyc_note: n }).eq('id', id); loadKycList(); }
+// KYC de TODOS: trabajadoras Y clientes (hombres que quieren llamar)
+async function loadKycList() {
+  const { data } = await db.from('profiles').select('*').eq('kyc_status', 'pending').order('created_at', { ascending: false });
+  document.getElementById('kycList').innerHTML = (data || []).map(u => `<div class="row-item"><div class="row-main">
+      <b>${u.role === 'remote_worker' ? (u.model_name || u.full_name) : u.full_name}</b>
+      <small>${ROLE_LABELS[u.role] || u.role} · ${u.email} · Edad: ${u.age || '?'}</small>
+      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : '⚠️ sin rostro'}</div></div>
+      <div class="row-actions"><button class="btn-small success" onclick="approveKyc('${u.id}')">✅ +18</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('') || '<p class="empty-state">Nadie pendiente 🎉</p>';
+}
+async function approveKyc(id) {
+  const { data: u } = await db.from('profiles').select('role').eq('id', id).single();
+  const up = { kyc_status: 'approved', is_verified: true };
+  if (u?.role === 'remote_worker') up.is_active = true;
+  await db.from('profiles').update(up).eq('id', id);
+  showToast('✅ Verificado y habilitado'); loadKycList();
+}
+async function rejectKyc(id) { const n = prompt('Razón (edad no verificada, foto obstruida, etc.):'); if (!n) return; await db.from('profiles').update({ kyc_status: 'rejected', kyc_note: n }).eq('id', id); showToast('❌ Rechazado'); loadKycList(); }
 async function startKyc(userId, name) { kycTarget = userId; await loadScript('calls.js'); document.getElementById('kycTitle').textContent = '🎥 KYC: ' + name; document.getElementById('kycVerifyBtn').classList.remove('hidden'); await startWebCall('FENDYX_KYC_' + userId.slice(0, 8), { rate: 0, rowId: null, asClient: true }); }
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
@@ -180,53 +138,16 @@ async function loadWorkersAdmin() {
     const cur = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
     const curRate = parseFloat(w.rate_per_minute) || LEVELS[cur - 1].rate;
     return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>${levelBadge(cur)} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
-     <div class="row-actions">
-       <select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">${LEVELS.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.ico} ${l.name} ($${l.rate})</option>`).join('')}</select>
-       <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
-       <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button>
-     </div></div>`;
+     <div class="row-actions"><select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">${LEVELS.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.ico} ${l.name} ($${l.rate})</option>`).join('')}</select>
+     <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
+     <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button></div></div>`;
   }).join('') || '<p class="empty-state">Sin trabajadoras aprobadas</p>';
 }
-async function setWorkerLevel(id, level) {
-  const lv = parseInt(level, 10); const lvl = LEVELS.find(x => x.level === lv);
-  if (!lvl) return showToast('❌ Nivel inválido');
-  const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: lvl.level, p_rate: lvl.rate });
-  if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
-  showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' · BD: ' + data);
-  await loadWorkersAdmin();
-}
-async function setWorkerRate(id) {
-  const rate = parseFloat(document.getElementById('rate_' + id).value);
-  if (isNaN(rate) || rate < 0.2 || rate > 3) return showToast('Rango 0.2 a 3');
-  const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: null, p_rate: rate });
-  if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
-  showToast('✅ Tarifa ◈ ' + rate + '/min');
-  await loadWorkersAdmin();
-}
-
-// ===== CONTROL DE APARTADOS (activo / próximamente / oculto) =====
+async function setWorkerLevel(id, level) { const lv = parseInt(level, 10); const lvl = LEVELS.find(x => x.level === lv); if (!lvl) return showToast('❌ Nivel inválido'); const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: lvl.level, p_rate: lvl.rate }); if (error) return showToast('❌ ' + error.message); if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada')); showToast('✅ ' + lvl.ico + ' ' + lvl.name); await loadWorkersAdmin(); }
+async function setWorkerRate(id) { const rate = parseFloat(document.getElementById('rate_' + id).value); if (isNaN(rate) || rate < 0.2 || rate > 3) return showToast('Rango 0.2 a 3'); const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: null, p_rate: rate }); if (error) return showToast('❌ ' + error.message); if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada')); showToast('✅ Tarifa ◈ ' + rate + '/min'); await loadWorkersAdmin(); }
 function loadApartados() {
   const cfg = window._modulesConfig || {};
-  document.getElementById('modulesConfigList').innerHTML = MODULE_DEFS.map(d => {
-    const st = cfg[d.id] || 'on';
-    return `<div class="row-item"><div class="row-main"><b>${MODULE_ICONS[d.id] || ''} ${d.n}</b>
-      <small>${st === 'on' ? '🟢 Activo' : st === 'off' ? '🔒 Deshabilitado (próximamente)' : '🙈 Oculto'}</small></div>
-      <select class="btn-small" onchange="saveModuleState('${d.id}', this.value)">
-        <option value="on" ${st === 'on' ? 'selected' : ''}>🟢 Activo</option>
-        <option value="off" ${st === 'off' ? 'selected' : ''}>🔒 Próximamente</option>
-        <option value="hidden" ${st === 'hidden' ? 'selected' : ''}>🙈 Oculto</option>
-      </select></div>`;
-  }).join('');
+  document.getElementById('modulesConfigList').innerHTML = MODULE_DEFS.map(d => { const st = cfg[d.id] || 'on'; return `<div class="row-item"><div class="row-main"><b>${MODULE_ICONS[d.id] || ''} ${d.n}</b><small>${st === 'on' ? '🟢 Activo' : st === 'off' ? '🔒 Próximamente' : '🙈 Oculto'}</small></div><select class="btn-small" onchange="saveModuleState('${d.id}', this.value)"><option value="on" ${st === 'on' ? 'selected' : ''}>🟢 Activo</option><option value="off" ${st === 'off' ? 'selected' : ''}>🔒 Próximamente</option><option value="hidden" ${st === 'hidden' ? 'selected' : ''}>🙈 Oculto</option></select></div>`; }).join('');
 }
-async function saveModuleState(id, state) {
-  const cfg = Object.assign({}, window._modulesConfig || {});
-  cfg[id] = state;
-  await db.from('app_branding').update({ modules_config: cfg, updated_at: new Date().toISOString() }).eq('id', 1);
-  window._modulesConfig = cfg;
-  showToast('✅ Apartado actualizado para todos');
-  loadApartados(); loadModules();
-}
-
+async function saveModuleState(id, state) { const cfg = Object.assign({}, window._modulesConfig || {}); cfg[id] = state; await db.from('app_branding').update({ modules_config: cfg, updated_at: new Date().toISOString() }).eq('id', 1); window._modulesConfig = cfg; showToast('✅ Apartado actualizado para todos'); loadApartados(); loadModules(); }
 async function runAudit() { const q = document.getElementById('auditSearch').value.trim(); const box = document.getElementById('auditResults'); if (q.length < 3) { box.innerHTML = '<p>Mín 3 caracteres</p>'; return; } const { data } = await db.from('messages').select('*, profiles!messages_sender_id_fkey(email)').ilike('content', '%' + q + '%').limit(50); box.innerHTML = (data || []).map(m => `<div class="row-item"><div class="row-main"><b>${m.profiles?.email || '—'}</b><div>…${m.content}…</div></div><button class="btn-small danger" onclick="toggleBan('${m.sender_id}',true)">🚫</button></div>`).join('') || '<p>Sin coincidencias</p>'; }

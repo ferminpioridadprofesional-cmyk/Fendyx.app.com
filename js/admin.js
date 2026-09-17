@@ -164,37 +164,39 @@ async function startKyc(userId, name) { kycTarget = userId; await loadScript('ca
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
-// ===== TRABAJADORAS: lectura ya abierta + escritura vía RPC blindada =====
+// ===== TRABAJADORAS: LECTURA Y ESCRITURA 100% VÍA RPC (superusuario) =====
 async function loadWorkersAdmin() {
-  const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
-  document.getElementById('adminWorkersList').innerHTML = (data || []).map(w => {
-    const rd = w.role_details?.[0];
-    const cur = Math.min(5, Math.max(1, parseInt(rd?.worker_level) || 1));
-    const curRate = parseFloat(rd?.rate_per_minute) || LEVELS[cur - 1].rate;
-    return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>${levelBadge(cur)} · ◈ ${curRate}/min</small></div>
+  const { data, error } = await db.rpc('admin_get_workers');
+  if (error) { document.getElementById('adminWorkersList').innerHTML = '<p class="empty-state">❌ ' + error.message + '</p>'; return; }
+  const list = (typeof data === 'string' ? JSON.parse(data) : data) || [];
+  document.getElementById('adminWorkersList').innerHTML = list.map(w => {
+    const cur = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
+    const curRate = parseFloat(w.rate_per_minute) || LEVELS[cur - 1].rate;
+    return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>${levelBadge(cur)} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
      <div class="row-actions">
        <select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">${LEVELS.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.ico} ${l.name} ($${l.rate})</option>`).join('')}</select>
        <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
        <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button>
      </div></div>`;
-  }).join('') || '<p class="empty-state">Sin trabajadoras</p>';
+  }).join('') || '<p class="empty-state">Sin trabajadoras aprobadas</p>';
 }
 async function setWorkerLevel(id, level) {
   const lv = parseInt(level, 10); const lvl = LEVELS.find(x => x.level === lv);
   if (!lvl) return showToast('❌ Nivel inválido');
   const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: lvl.level, p_rate: lvl.rate });
   if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.startsWith('OK')) return showToast('❌ ' + (data || 'fallo desconocido'));
-  showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' (◈ ' + lvl.rate + '/min)');
-  loadWorkersAdmin();
+  if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
+  showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' · BD confirmó: ' + data);
+  await loadWorkersAdmin();
 }
 async function setWorkerRate(id) {
   const rate = parseFloat(document.getElementById('rate_' + id).value);
   if (isNaN(rate) || rate < 0.2 || rate > 3) return showToast('Rango 0.2 a 3');
   const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: null, p_rate: rate });
   if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.startsWith('OK')) return showToast('❌ ' + (data || 'fallo'));
-  showToast('✅ Tarifa ◈ ' + rate + '/min'); loadWorkersAdmin();
+  if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
+  showToast('✅ Tarifa ◈ ' + rate + '/min · BD: ' + data);
+  await loadWorkersAdmin();
 }
 
 async function runAudit() { const q = document.getElementById('auditSearch').value.trim(); const box = document.getElementById('auditResults'); if (q.length < 3) { box.innerHTML = '<p>Mín 3 caracteres</p>'; return; } const { data } = await db.from('messages').select('*, profiles!messages_sender_id_fkey(email)').ilike('content', '%' + q + '%').limit(50); box.innerHTML = (data || []).map(m => `<div class="row-item"><div class="row-main"><b>${m.profiles?.email || '—'}</b><div>…${m.content}…</div></div><button class="btn-small danger" onclick="toggleBan('${m.sender_id}',true)">🚫</button></div>`).join('') || '<p>Sin coincidencias</p>'; }

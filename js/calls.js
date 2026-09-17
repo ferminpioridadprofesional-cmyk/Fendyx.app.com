@@ -1,7 +1,7 @@
 'use strict';
 let pc = null, localStream = null, callChannel = null, callRoom = null;
 let callSeconds = 0, callClock = null, callCostTotal = 0, callRowId = null, callRate = 0, iAmClientFlag = false, isInitiatorFlag = false;
-let callSetupDone = false, facingMode = 'user', currentDeviceId = null;
+let callSetupDone = false, facingMode = 'user', currentDeviceId = null, currentMicId = null;
 let offerSent = false, pendingCandidates = [], currentPolicy = 'all';
 let peerPresent = false, gotAnswer = false, gotOffer = false;
 let helloTimer = null, ackTimer = null, offerTimer = null, watchdog = null, lastReconnectAt = 0, callStartAt = 0;
@@ -38,6 +38,9 @@ function ensureCallUI() {
     .call-controls{display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
     .call-controls .btn-small{padding:11px 14px;font-size:.9rem}
     .call-controls .btn-small.off{opacity:.6;border-color:var(--error);color:var(--error)}
+    .device-panel{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:8px}
+    .device-panel label{font-size:.8rem;color:var(--dim);font-weight:700}
+    .device-panel select{width:100%;padding:9px 10px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'Rajdhani'}
     .call-chat{margin-top:10px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
     .call-chat-list{max-height:120px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.03)}
     .call-chat-list .cc{padding:6px 10px;border-radius:10px;font-size:.85rem;max-width:85%}
@@ -61,7 +64,12 @@ function ensureCallUI() {
       <button id="btnMic" class="btn-small" onclick="toggleMic()">🎤 Silenciar</button>
       <button id="btnCam" class="btn-small" onclick="toggleCam()">📷 Encendida</button>
       <button id="btnFlip" class="btn-small" onclick="flipCamera()">🔄</button>
+      <button id="btnDev" class="btn-small" onclick="toggleDevicePanel()">⚙️</button>
       <button class="btn-small danger" onclick="endWebCall()">📞</button>
+    </div>
+    <div id="devicePanel" class="device-panel hidden">
+      <label>📷 Cámara</label><select id="selCam" onchange="changeCam(this.value)"></select>
+      <label>🎤 Micrófono</label><select id="selMic" onchange="changeMic(this.value)"></select>
     </div>
     <div class="call-chat">
       <div id="callChatList" class="call-chat-list"></div>
@@ -82,6 +90,59 @@ function armNetworkWatch() {
   try { if (navigator.connection) navigator.connection.addEventListener('change', onChange); } catch (e) {}
   window.addEventListener('online', onChange);
   window.addEventListener('offline', onChange);
+}
+
+// ===== SELECTOR DE DISPOSITIVOS =====
+function toggleDevicePanel() {
+  const p = document.getElementById('devicePanel');
+  if (!p) return;
+  const open = p.classList.toggle('hidden');
+  if (!open) populateDevices();
+}
+async function populateDevices() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter(d => d.kind === 'videoinput');
+    const mics = devs.filter(d => d.kind === 'audioinput');
+    const sc = document.getElementById('selCam'), sm = document.getElementById('selMic');
+    if (sc) sc.innerHTML = cams.map((c, i) => `<option value="${c.deviceId}" ${c.deviceId === currentDeviceId ? 'selected' : ''}>${c.label || ('Cámara ' + (i + 1))}</option>`).join('');
+    if (sm) sm.innerHTML = mics.map((m, i) => `<option value="${m.deviceId}" ${m.deviceId === currentMicId ? 'selected' : ''}>${m.label || ('Micrófono ' + (i + 1))}</option>`).join('');
+  } catch (e) {}
+}
+async function changeCam(deviceId) {
+  if (!deviceId || !pc || !localStream) return;
+  try {
+    const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+    const nt = ns.getVideoTracks()[0];
+    applyVideoTrack(nt);
+    showToast('📷 Cámara cambiada');
+  } catch (e) { showToast('❌ No se pudo usar esa cámara'); }
+}
+async function changeMic(deviceId) {
+  if (!deviceId || !pc || !localStream) return;
+  try {
+    const ns = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false });
+    const nt = ns.getAudioTracks()[0];
+    applyAudioTrack(nt);
+    showToast('🎤 Micrófono cambiado');
+  } catch (e) { showToast('❌ No se pudo usar ese micrófono'); }
+}
+function applyVideoTrack(nt) {
+  currentDeviceId = nt.getSettings?.().deviceId || nt.id;
+  const ot = localStream.getVideoTracks()[0];
+  if (ot) { ot.stop(); localStream.removeTrack(ot); }
+  localStream.addTrack(nt);
+  const lv = document.getElementById('localVideo'); if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); }
+  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+  if (sender) sender.replaceTrack(nt);
+}
+function applyAudioTrack(nt) {
+  currentMicId = nt.getSettings?.().deviceId || nt.id;
+  const ot = localStream.getAudioTracks()[0];
+  if (ot) { ot.stop(); localStream.removeTrack(ot); }
+  localStream.addTrack(nt);
+  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+  if (sender) sender.replaceTrack(nt);
 }
 
 async function showIncomingCall(row) {
@@ -120,7 +181,6 @@ async function beginCall(room, opts, initiator) {
   const bm = document.getElementById('btnMic'); if (bm) { bm.textContent = '🎤 Silenciar'; bm.classList.remove('off'); }
   const bc = document.getElementById('btnCam'); if (bc) { bc.textContent = '📷 Encendida'; bc.classList.remove('off'); }
   document.getElementById('callTimer').textContent = '00:00';
-  // El que llama NO ve descuento; la trabajadora SÍ ve ganancia
   const costSpan = document.getElementById('callCost');
   if (costSpan) {
     if (iAmClientFlag) { costSpan.style.display = 'none'; }
@@ -130,10 +190,12 @@ async function beginCall(room, opts, initiator) {
   showNetHint(false);
   setStatus('📷 Solicitando cámara…');
   document.getElementById('callChatList').innerHTML = '';
+  document.getElementById('devicePanel')?.classList.add('hidden');
   openModal('modal-call');
   try { localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'user' } }, audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch (e) { try { localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); } catch (e2) { showToast('❌ Permiso de cámara/micrófono denegado'); closeModal('modal-call'); return; } }
   currentDeviceId = localStream.getVideoTracks()[0]?.getSettings?.().deviceId || null;
+  currentMicId = localStream.getAudioTracks()[0]?.getSettings?.().deviceId || null;
   const lv = document.getElementById('localVideo'); lv.srcObject = localStream; lv.muted = true; lv.classList.remove('camoff'); lv.play().catch(() => {});
   setStatus(isInitiatorFlag ? '⏳ Llamando… espera respuesta' : '📞 Contestando…');
   callChannel = db.channel('call_' + room)
@@ -241,26 +303,24 @@ async function handleSignal(p) {
   if (p.type === 'ice') { if (pc.remoteDescription) pc.addIceCandidate(p.candidate).catch(() => {}); else pendingCandidates.push(p.candidate); }
 }
 
-// VOLTEO ROBUSTO: usa el deviceId exacto de la otra lente (arregla Android)
+// VOLTEO CON ESCALERA (arregla Tecno/Android de gama baja)
 async function flipCamera() {
   if (!localStream || !pc) return;
   let cams = [];
   try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) {}
   if (cams.length < 2) { showToast('❌ Este modelo tiene una sola cámara'); return; }
   facingMode = facingMode === 'user' ? 'environment' : 'user';
-  let target = cams.find(c => c.deviceId !== currentDeviceId) || cams[0];
-  try {
-    const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: target.deviceId } }, audio: false });
-    const nt = ns.getVideoTracks()[0];
-    currentDeviceId = nt.getSettings?.().deviceId || target.deviceId;
-    const ot = localStream.getVideoTracks()[0];
-    if (ot) { ot.stop(); localStream.removeTrack(ot); }
-    localStream.addTrack(nt);
-    const lv = document.getElementById('localVideo'); lv.srcObject = localStream; lv.play().catch(() => {});
-    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-    if (sender) await sender.replaceTrack(nt);
-    showToast(facingMode === 'environment' ? '🔄 Cámara trasera' : '🔄 Cámara frontal');
-  } catch (e) { showToast('❌ No se pudo voltear en este modelo'); }
+  const others = cams.filter(c => c.deviceId !== currentDeviceId);
+  let ns = null;
+  for (const c of others) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: c.deviceId } }, audio: false }); break; } catch (e) {} }
+  if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facingMode } }, audio: false }); } catch (e) {} }
+  if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode }, audio: false }); } catch (e) {} }
+  if (!ns) { showToast('❌ No se pudo voltear; usa ⚙️ para elegir cámara'); return; }
+  const nt = ns.getVideoTracks()[0];
+  const newId = nt.getSettings?.().deviceId || null;
+  if (newId && newId === currentDeviceId) { showToast('❌ El modelo no cambió de lente; usa ⚙️'); return; }
+  applyVideoTrack(nt);
+  showToast(facingMode === 'environment' ? '🔄 Cámara trasera' : '🔄 Cámara frontal');
 }
 
 function toggleMic() {
@@ -297,12 +357,10 @@ function startCallClock() {
     const t = document.getElementById('callTimer');
     if (t) t.textContent = String(Math.floor(callSeconds / 60)).padStart(2, '0') + ':' + String(callSeconds % 60).padStart(2, '0');
     const minutes = Math.floor(callSeconds / 60);
-    // TRABAJADORA: ve su ganancia en vivo
     if (!iAmClientFlag) {
       const earned = (callRate * minutes).toFixed(2);
       const c = document.getElementById('callCost'); if (c) c.textContent = '+' + earned + ' ◈';
     }
-    // CLIENTE: descuenta cada minuto; si no tiene, corta con mensaje
     if (iAmClientFlag && callRate > 0 && callSeconds % 60 === 0 && callRowId) {
       const { data: nb, error } = await db.rpc('pay_call_minute', { p_call: callRowId });
       if (error || nb === -1 || (nb !== null && nb <= 0)) {

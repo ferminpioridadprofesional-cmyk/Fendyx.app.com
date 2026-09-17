@@ -16,9 +16,36 @@ function pickZodiac(el, value) {
   el.classList.add('active');
 }
 
+function injectProfileStyle() {
+  if (document.getElementById('fendyx-profile-style')) return;
+  const st = document.createElement('style');
+  st.id = 'fendyx-profile-style';
+  st.textContent = `
+    .pf-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+    .pf-gallery img{width:100%;height:110px;object-fit:cover;border-radius:12px;border:1px solid var(--border);cursor:pointer;transition:transform .15s}
+    .pf-gallery img:hover{transform:scale(1.04);border-color:var(--border-strong)}
+    .pf-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:800;display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer}
+    .pf-lightbox img{max-width:100%;max-height:90vh;object-fit:contain;border-radius:10px}
+    .pf-hero{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+    .pf-hero img,.pf-hero-letter{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0}
+    .pf-hero-letter{background:var(--gradient);color:#04060c;display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:900}
+    .pf-meta{flex:1;text-align:left}
+    .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
+    .pf-private{display:none!important}
+    .pf-section{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}`;
+  document.head.appendChild(st);
+}
+function openLightbox(url) {
+  const lb = document.createElement('div');
+  lb.className = 'pf-lightbox';
+  lb.innerHTML = `<img src="${url}">`;
+  lb.onclick = () => lb.remove();
+  document.body.appendChild(lb);
+}
+
 async function loadProfileSection() {
   const p = currentProfile;
-  document.getElementById('profileName').textContent = p.full_name || 'Usuario';
+  document.getElementById('profileName').textContent = p.model_name || p.full_name || 'Usuario';
   document.getElementById('profileEmail').textContent = p.email;
   document.getElementById('profileRole').textContent = ROLE_LABELS[p.role] || p.role;
   document.getElementById('statTokens').textContent = p.unlimited_tokens ? '∞' : parseFloat(p.tokens_balance || 0).toFixed(2);
@@ -37,15 +64,15 @@ function fillProfilePro() {
   const form = document.querySelector('#section-profileedit form');
   form.innerHTML = `
     <h3>✏️ Editor de Perfil Pro</h3>
-    <label class="dim">Foto de perfil (1)</label>
-    <input type="file" id="proAvatar" accept="image/*">
-    <label class="dim">Fotos públicas (máximo 5)</label>
-    <input type="file" id="proGallery" accept="image/*" multiple>
-    <div id="proGalleryPrev" class="gallery-grid">${(p.gallery_urls || []).slice(0,5).map(u => `<img src="${u}">`).join('')}</div>
+    ${currentProfile.role === 'remote_worker' ? `<label class="dim">Nombre artístico / de modelo (se muestra públicamente)</label><input type="text" id="proModelName" placeholder="Ej: Valentina" value="${p.model_name || ''}">` : ''}
+    <label class="dim">Nombre (visible solo para ti y el admin)</label>
     <input type="text" id="proName" placeholder="Nombre" value="${p.full_name || ''}">
-    <input type="number" id="proAge" placeholder="Edad" min="18" max="100" value="${p.age || ''}">
-    <input type="text" id="proOccupation" placeholder="Ocupación" value="${p.occupation || ''}">
-    <textarea id="proBio" placeholder="Descripción" rows="3">${p.bio || ''}</textarea>
+    <label class="dim">Edad</label><input type="number" id="proAge" placeholder="Edad" min="18" max="100" value="${p.age || ''}">
+    <label class="dim">Ocupación</label><input type="text" id="proOccupation" placeholder="Ocupación" value="${p.occupation || ''}">
+    <label class="dim">Descripción</label><textarea id="proBio" placeholder="Descripción" rows="3">${p.bio || ''}</textarea>
+    <label class="dim">Foto de perfil (1)</label><input type="file" id="proAvatar" accept="image/*">
+    <label class="dim">Fotos públicas (máximo 5)</label><input type="file" id="proGallery" accept="image/*" multiple>
+    <div id="proGalleryPrev" class="gallery-grid">${(p.gallery_urls || []).slice(0, 5).map(u => `<img src="${u}" onclick="openLightbox('${u}')">`).join('')}</div>
     <label class="dim">🎯 Intereses (seleccionables)</label>
     <div class="chips-row">${INTERESTS.map(i => `<span class="chip ${_pe.interests.has(i) ? 'active' : ''}" onclick="toggleChip(this,'interests','${i}')">${i}</span>`).join('')}</div>
     <label class="dim">💫 Preferencias (seleccionables)</label>
@@ -67,6 +94,8 @@ async function saveProfilePro(e) {
     preferences: Array.from(_pe.preferences),
     zodiac: _pe.zodiac
   };
+  const mn = document.getElementById('proModelName');
+  if (mn) up.model_name = mn.value.trim();
   const av = document.getElementById('proAvatar').files[0];
   if (av) { const path = 'avatars/' + currentUser.id + '_' + Date.now() + '.png'; const r = await db.storage.from('fendyx-assets').upload(path, av); if (!r.error) up.avatar_url = db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl; }
   const files = Array.from(document.getElementById('proGallery').files || []);
@@ -85,25 +114,41 @@ async function saveProfilePro(e) {
   showToast('✅ Perfil Pro actualizado');
 }
 
+// PERFIL PÚBLICO: solo datos seguros (sin email, whatsapp, teléfono)
 async function viewUserProfile(userId) {
+  injectProfileStyle();
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('id', userId).single();
   if (!data) return;
   viewedUserId = userId;
   const rd = data.role_details?.[0];
   const lv = levelInfo(rd?.worker_level);
-  document.getElementById('upName').textContent = data.full_name || 'Usuario';
-  const img = document.getElementById('upAvatar'), let_ = document.getElementById('upAvatarLetter');
-  if (data.avatar_url) { img.src = data.avatar_url; img.classList.remove('hidden'); let_.classList.add('hidden'); }
-  else { img.classList.add('hidden'); let_.classList.remove('hidden'); let_.textContent = (data.full_name || 'U').charAt(0).toUpperCase(); }
-  document.getElementById('upRole').textContent = ROLE_LABELS[data.role] || data.role;
-  document.getElementById('upVerified').textContent = data.is_verified ? ' ✅ Verificado' : '';
+  const displayName = (data.role === 'remote_worker' ? (data.model_name || data.full_name) : data.full_name) || 'Usuario';
+  const mainPhoto = data.avatar_url || (data.gallery_urls || [])[0] || '';
+  const allPhotos = [mainPhoto, ...(data.gallery_urls || [])].filter(Boolean).slice(0, 6);
+
+  document.getElementById('upName').textContent = displayName;
+  const hero = document.querySelector('#modal-userprofile .up-hero');
+  if (hero) hero.outerHTML = `<div class="pf-hero">
+    ${mainPhoto ? `<img src="${mainPhoto}" onclick="openLightbox('${mainPhoto}')">` : `<div class="pf-hero-letter">${(displayName || '?').charAt(0).toUpperCase()}</div>`}
+    <div class="pf-meta">
+      <b>${displayName}${data.age ? ' · ' + data.age + ' años' : ''}</b>
+      <span class="role-badge">${ROLE_LABELS[data.role] || data.role}</span>${data.is_verified ? ' <span style="color:var(--success)">✅ Verificado</span>' : ''}
+      <div style="margin-top:6px">${stars(data.rating || 5)} ${parseFloat(data.rating || 5).toFixed(1)}</div>
+      ${data.occupation ? `<div class="dim" style="margin-top:4px">${data.occupation}</div>` : ''}
+    </div>
+  </div>`;
+
+  document.getElementById('upVerified').innerHTML = data.zodiac ? `<span class="chip">${data.zodiac}</span>` : '';
   document.getElementById('upRating').textContent = stars(data.rating || 5) + ' ' + parseFloat(data.rating || 5).toFixed(1);
-  const meta = [data.age ? data.age + ' años' : '', data.occupation, data.zodiac].filter(Boolean).join(' · ');
-  document.getElementById('upBio').innerHTML = `${meta ? '<b>' + meta + '</b><br>' : ''}${data.bio || rd?.bio || 'Sin descripción.'}`;
-  document.getElementById('upInterests').innerHTML =
-    (data.interests || []).map(i => `<span class="chip active">🎯 ${i}</span>`).join('') +
-    (data.preferences || []).map(i => `<span class="chip">💫 ${i}</span>`).join('') || '<p class="dim">Sin intereses publicados</p>';
-  document.getElementById('upGallery').innerHTML = (data.gallery_urls || []).slice(0, 5).map(u => `<img src="${u}" onclick="window.open('${u}')">`).join('') || '<p class="dim">Sin fotos públicas</p>';
+  document.getElementById('upBio').innerHTML = `${data.bio || rd?.bio || 'Sin descripción.'}`;
+
+  const interestsHTML = (data.interests || []).map(i => `<span class="chip active">🎯 ${i}</span>`).join('') +
+    (data.preferences || []).map(i => `<span class="chip">💫 ${i}</span>`).join('');
+  document.getElementById('upInterests').innerHTML = interestsHTML || '<p class="dim">Sin intereses</p>';
+
+  document.getElementById('upGallery').outerHTML = `<div class="pf-section"><h4 class="sub-title">📸 Galería</h4>${allPhotos.length ? `<div class="pf-gallery">${allPhotos.map(u => `<img src="${u}" onclick="openLightbox('${u}')">`).join('')}</div>` : '<p class="dim">Sin fotos</p>'}</div>`;
+
+  // BOTONES: llamar/mensaje/reporte. NUNCA mostrar email, whatsapp, teléfono al público.
   const actions = document.getElementById('upActions');
   const canCall = data.role === 'remote_worker' && data.kyc_status === 'approved' && data.id !== currentUser.id;
   actions.innerHTML = `
@@ -131,7 +176,4 @@ async function joinKycRoom() {
   document.getElementById('kycVerifyBtn').classList.add('hidden');
   await joinWebCall('FENDYX_KYC_' + currentUser.id.slice(0, 8), { rate: 0, rowId: null, asClient: false });
 }
-function closeKyc() {
-  if (typeof callRoom !== 'undefined' && callRoom) { endWebCall(); }
-  else { closeModal('modal-kyc'); }
-}
+function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }

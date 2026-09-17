@@ -3,23 +3,47 @@ let currentUser = null, currentProfile = null, roleDetails = null, myLocation = 
 let cart = { restId: null, items: [] };
 let liveChannel = null, sharing = false, shareTimer = null;
 const loadedScripts = {};
-const WORKER_LEVELS = [
-  { n: 1, name: 'Bronce', rate: 0.2 }, { n: 2, name: 'Plata', rate: 0.7 },
-  { n: 3, name: 'Oro', rate: 1.2 }, { n: 4, name: 'Platino', rate: 2.0 },
-  { n: 5, name: 'Diamante', rate: 3.0 }
-];
-function levelInfo(n) { return WORKER_LEVELS.find(l => l.n === parseInt(n)) || WORKER_LEVELS[0]; }
+
+const LEVEL_META = {
+  1: { ico: '🥉', name: 'Bronce', rate: 0.2 },
+  2: { ico: '🥈', name: 'Plata', rate: 0.7 },
+  3: { ico: '🥇', name: 'Oro', rate: 1.2 },
+  4: { ico: '💠', name: 'Platino', rate: 2.0 },
+  5: { ico: '💎', name: 'Diamante', rate: 3.0 }
+};
+function levelInfo(n) { return LEVEL_META[parseInt(n)] || LEVEL_META[1]; }
+function levelBadge(n) { const lv = Math.min(5, Math.max(1, parseInt(n) || 1)); const m = LEVEL_META[lv]; return `<span class="lvl lvl-${lv}"><span class="lvl-ico">${m.ico}</span>${m.name}</span>`; }
+
+const TIER_CSS = `
+ .lvl{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-weight:800;font-size:.78rem;border:1px solid;vertical-align:middle}
+ .lvl-ico{font-size:1rem}
+ .lvl-1{background:rgba(205,127,50,.15);color:#e0a06a;border-color:#cd7f32}
+ .lvl-2{background:rgba(192,192,192,.15);color:#dcdcdc;border-color:#c0c0c0}
+ .lvl-3{background:rgba(255,215,0,.15);color:#ffd75e;border-color:#ffd700;animation:lvlGlow 2.5s infinite}
+ .lvl-4{background:rgba(0,217,255,.15);color:#7fe8ff;border-color:#00d9ff;animation:lvlGlow 1.8s infinite}
+ .lvl-5{background:linear-gradient(100deg,rgba(255,45,149,.25),rgba(0,217,255,.25),rgba(255,45,149,.25));background-size:200%;color:#fff;border-color:transparent;animation:lvlShine 2.5s linear infinite;box-shadow:0 0 14px rgba(255,45,149,.45)}
+ @keyframes lvlGlow{0%,100%{box-shadow:0 0 4px currentColor}50%{box-shadow:0 0 12px currentColor}}
+ @keyframes lvlShine{0%{background-position:0%}100%{background-position:200%}}
+ .girl-card.tier-3{border-color:rgba(255,215,0,.35)}
+ .girl-card.tier-4{border-color:rgba(0,217,255,.45);box-shadow:0 0 14px rgba(0,217,255,.2)}
+ .girl-card.tier-5{border-color:rgba(255,45,149,.55);animation:cardPulse 3s infinite}
+ @keyframes cardPulse{0%,100%{box-shadow:0 0 10px rgba(255,45,149,.2)}50%{box-shadow:0 0 24px rgba(255,45,149,.5)}}
+ .tier-4 .pf-hero img,.tier-4 .pf-hero-letter{box-shadow:0 0 16px rgba(0,217,255,.55)}
+ .tier-5 .pf-hero img,.tier-5 .pf-hero-letter{box-shadow:0 0 24px rgba(255,45,149,.65);animation:heroPulse 2.2s infinite}
+ .tier-5 .pf-hero{position:relative}
+ .tier-5 .pf-hero::after{content:'👑';position:absolute;top:-14px;left:52px;font-size:1.5rem;animation:crownFloat 2.5s ease-in-out infinite}
+ @keyframes heroPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+ @keyframes crownFloat{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-5px) rotate(6deg)}}
+ .tier-5 .pf-gallery img{border-color:rgba(255,45,149,.5)}
+ .tier-4 .pf-gallery img{border-color:rgba(0,217,255,.4)}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initPWA();
   await loadBranding();
   const isApp = !!document.getElementById('section-dashboard');
   const { data: { session } } = await db.auth.getSession();
-  if (isApp) {
-    if (!session) { location.replace('index.html'); return; }
-    currentUser = session.user;
-    await enterApp();
-  } else if (session) { location.replace('app.html'); }
+  if (isApp) { if (!session) { location.replace('index.html'); return; } currentUser = session.user; await enterApp(); }
+  else if (session) { location.replace('app.html'); }
 });
 
 function initPWA() {
@@ -27,7 +51,6 @@ function initPWA() {
     const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.json'; document.head.appendChild(l);
     const m = document.createElement('meta'); m.name = 'theme-color'; m.content = '#00d9ff'; document.head.appendChild(m);
     const a = document.createElement('link'); a.rel = 'apple-touch-icon'; a.href = 'icons/icon.svg'; document.head.appendChild(a);
-    const t = document.createElement('meta'); t.name = 'mobile-web-app-capable'; t.content = 'yes'; document.head.appendChild(t);
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
@@ -37,36 +60,22 @@ async function enterApp() {
     await loadProfile();
     if (!currentProfile) await repairProfile();
     if (!currentProfile) { await db.auth.signOut(); location.replace('index.html'); return; }
-    if (currentProfile.is_banned) {
-      localStorage.setItem('fendyx_ban_reason', currentProfile.ban_reason || 'Sin razón especificada');
-      await db.auth.signOut(); location.replace('index.html?banned=1'); return;
-    }
+    if (currentProfile.is_banned) { localStorage.setItem('fendyx_ban_reason', currentProfile.ban_reason || 'Sin razón'); await db.auth.signOut(); location.replace('index.html?banned=1'); return; }
     injectDynamicUI();
     await ensureRoleDetails();
     if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status === 'approved') loadScript('calls.js');
     updateHeader(); loadModules();
     const last = localStorage.getItem('fendyx_last_section');
-    const valid = last && LOADERS[last] && (
-      (last !== 'delivery' || currentProfile.role === 'delivery') &&
-      (last !== 'girls' || currentProfile.role !== 'remote_worker') &&
-      (last !== 'kyc' || currentProfile.role === 'remote_worker') &&
-      (last !== 'admin' || currentProfile.role === 'admin'));
+    const valid = last && LOADERS[last] && ((last !== 'delivery' || currentProfile.role === 'delivery') && (last !== 'girls' || currentProfile.role !== 'remote_worker') && (last !== 'kyc' || currentProfile.role === 'remote_worker') && (last !== 'admin' || currentProfile.role === 'admin'));
     showSection(valid ? last : 'dashboard');
     startRealtime();
   } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
 }
-
 async function repairProfile() {
   const { data } = await db.from('profiles').select('*').eq('id', currentUser.id).single();
   if (data) { currentProfile = data; return; }
   const meta = JSON.parse(localStorage.getItem('fendyx_pending_meta') || '{}');
-  const { data: created, error } = await db.from('profiles').insert({
-    id: currentUser.id, email: currentUser.email,
-    full_name: meta.full_name || currentUser.email?.split('@')[0] || 'Usuario',
-    role: meta.role || 'user', age: meta.age || null, gender: meta.gender || null,
-    referral_code: (currentUser.id || '').replace(/-/g, '').slice(0, 8).toUpperCase(),
-    tokens_balance: 0, is_active: false
-  }).select().single();
+  const { data: created, error } = await db.from('profiles').insert({ id: currentUser.id, email: currentUser.email, full_name: meta.full_name || 'Usuario', role: meta.role || 'user', age: meta.age || null, gender: meta.gender || null, referral_code: (currentUser.id || '').replace(/-/g, '').slice(0, 8).toUpperCase(), tokens_balance: 0, is_active: false }).select().single();
   if (!error) currentProfile = created;
 }
 async function loadProfile() {
@@ -78,154 +87,72 @@ async function loadProfile() {
 async function ensureRoleDetails() {
   if (roleDetails) return;
   const meta = JSON.parse(localStorage.getItem('fendyx_pending_meta') || '{}');
-  const { data } = await db.from('role_details').insert({
-    user_id: currentUser.id, role_type: currentProfile.role,
-    rif: meta.rif || null, business_name: meta.business_name || null, address: meta.address || null,
-    license_number: meta.license || null, vehicle_plate: meta.plate || null, vehicle_type: meta.vehicle || null,
-    specialty: meta.specialty || null, bio: meta.bio || null,
-    rate_per_minute: currentProfile.role === 'remote_worker' ? 0.2 : null
-  }).select().single();
+  const { data } = await db.from('role_details').insert({ user_id: currentUser.id, role_type: currentProfile.role, rif: meta.rif || null, business_name: meta.business_name || null, address: meta.address || null, license_number: meta.license || null, vehicle_plate: meta.plate || null, vehicle_type: meta.vehicle || null, specialty: meta.specialty || null, bio: meta.bio || null, rate_per_minute: currentProfile.role === 'remote_worker' ? 0.2 : null }).select().single();
   roleDetails = data;
   localStorage.removeItem('fendyx_pending_meta');
 }
 async function loadBranding() {
   const { data } = await db.from('app_branding').select('*').eq('id', 1).single();
   if (!data) return;
-  const setLogo = (i, f) => { const img = document.getElementById(i), fl = document.getElementById(f); if (!img || !fl) return;
-    if (data.logo_url) { img.src = data.logo_url; img.style.display = 'inline-block'; fl.style.display = 'none'; }
-    else { img.style.display = 'none'; fl.style.display = 'block'; } };
+  const setLogo = (i, f) => { const img = document.getElementById(i), fl = document.getElementById(f); if (!img || !fl) return; if (data.logo_url) { img.src = data.logo_url; img.style.display = 'inline-block'; fl.style.display = 'none'; } else { img.style.display = 'none'; fl.style.display = 'block'; } };
   setLogo('authLogo', 'authLogoFallback'); setLogo('headerLogo', 'headerLogoFallback'); setLogo('adminLogoPreview', 'adminLogoFallback');
   const n = data.app_name || 'FENDYX';
   ['authAppName', 'headerAppName'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = n; });
   const an = document.getElementById('adminAppName'); if (an && !an.value) an.value = n;
 }
 
-// ===== UBICACIÓN COMPATIBLE iOS Safari =====
-function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
-function getPos() {
-  return new Promise(res => {
-    if (!navigator.geolocation) return res(null);
-    const opts = isIOS()
-      ? { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
-      : { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-    navigator.geolocation.getCurrentPosition(
-      p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      err => {
-        if (err.code === 1) {
-          showToast(isIOS()
-            ? '📍 iOS: Ajustes → Privacidad y seguridad → Localización → Safari → "Al usar la app"; y Ajustes → Safari → Ubicación → permitir'
-            : '📍 Permiso de ubicación denegado en el navegador');
-          return res(null);
-        }
-        navigator.geolocation.getCurrentPosition(
-          p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
-          () => res(null),
-          { enableHighAccuracy: !opts.enableHighAccuracy, timeout: 15000, maximumAge: 60000 });
-      }, opts);
-  });
-}
-async function toggleShareLocation() {
-  const btn = document.getElementById('btnShareLocation');
-  if (sharing) {
-    sharing = false;
-    if (shareTimer) clearInterval(shareTimer);
-    await db.from('user_locations').update({ is_sharing: false }).eq('user_id', currentUser.id);
-    if (btn) btn.textContent = '📡 Compartir ubicación';
-    showToast('📴 Dejaste de compartir ubicación'); return;
-  }
-  const first = await getPos();
-  if (!first) return;
-  sharing = true; myLocation = first;
-  await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: first.lat, longitude: first.lng, is_sharing: true }, { onConflict: 'user_id' });
-  if (btn) btn.textContent = '🔴 EN VIVO (tocar para parar)';
-  if (map) map.setView([first.lat, first.lng], 14);
-  loadMapUsers();
-  shareTimer = setInterval(async () => {
-    const p = await getPos();
-    if (!p || !sharing) return;
-    myLocation = p;
-    await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: p.lat, longitude: p.lng, is_sharing: true }, { onConflict: 'user_id' });
-    loadMapUsers();
-  }, 6000);
-  showToast('📡 Compartiendo ubicación en vivo');
-}
-function autoLocate() { if (!sharing) toggleShareLocation(); }
-
 function injectDynamicUI() {
   if (document.getElementById('fendyx-extra-style')) return;
   const st = document.createElement('style');
   st.id = 'fendyx-extra-style';
-  st.textContent = `
+  st.textContent = TIER_CSS + `
     .activation-banner{position:fixed;top:62px;left:0;right:0;z-index:115;background:linear-gradient(100deg,rgba(255,176,32,.96),rgba(255,59,107,.92));color:#04060c;padding:10px 16px;font-weight:700;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center}
     body.has-banner .app-main{padding-top:130px}
     .kyc-img{width:120px;height:85px;object-fit:cover;border-radius:10px;border:1px solid var(--border-strong);margin:4px;cursor:pointer}
     .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}
     .panic-fab{position:fixed;right:20px;bottom:170px;z-index:160;width:56px;height:56px;border-radius:50%;border:2px solid #ff3b6b;background:rgba(255,59,107,.18);color:#ff3b6b;font-size:1.4rem;cursor:pointer;backdrop-filter:blur(8px);animation:pulse 2.5s infinite}
     .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
-    .incoming-call b{display:block}
-    .typing-dot{color:var(--primary);font-style:italic;font-size:.85rem}`;
+    .incoming-call b{display:block}`;
   document.head.appendChild(st);
   const banner = document.createElement('div');
   banner.id = 'activationBanner'; banner.className = 'activation-banner hidden';
-  banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3) y espera verificación. <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
+  banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3). <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
   document.querySelector('.app-header').after(banner);
   const panic = document.createElement('button');
   panic.id = 'panicBtn'; panic.className = 'panic-fab'; panic.textContent = '🆘';
   panic.onclick = () => sendPanic('general');
   document.body.appendChild(panic);
-  if (!document.getElementById('incomingCall')) {
-    const inc = document.createElement('div'); inc.id = 'incomingCall'; inc.className = 'incoming-call hidden';
-    document.body.appendChild(inc);
-  }
+  if (!document.getElementById('incomingCall')) { const inc = document.createElement('div'); inc.id = 'incomingCall'; inc.className = 'incoming-call hidden'; document.body.appendChild(inc); }
   const girls = document.createElement('section');
   girls.id = 'section-girls'; girls.className = 'app-section';
-  girls.innerHTML = `<div class="section-header"><h2>💃 Videollamada con chicas</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
-    <p class="dim">Chicas +18 verificadas por FENDYX. Tarifa por nivel: ◈ 0.2 – 3 por minuto.</p>
-    <div id="girlsGrid" class="cards-grid"></div>`;
+  girls.innerHTML = `<div class="section-header"><h2>💃 Videollamada con chicas</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="girlsGrid" class="cards-grid"></div>`;
   document.querySelector('.app-main').appendChild(girls);
   const kyc = document.createElement('section');
   kyc.id = 'section-kyc'; kyc.className = 'app-section';
-  kyc.innerHTML = `<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div>
-    <div id="kycStatusBox" class="owner-panel"></div>
-    <form class="owner-panel owner-form" onsubmit="submitKycDocs(event)">
-      <input type="text" id="kycWhatsapp" placeholder="WhatsApp (ej: +58 414 1234567)" required>
-      <label class="dim">📄 Foto de tu cédula (legible)</label><input type="file" id="kycIdCard" accept="image/*" required>
-      <label class="dim">🤳 Foto reciente de tu rostro (sin filtros ni gafas)</label><input type="file" id="kycFace" accept="image/*" required>
-      <button type="submit" class="btn-primary">Enviar para verificación</button>
-    </form>`;
+  kyc.innerHTML = `<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div>
+    <form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><input type="file" id="kycIdCard" accept="image/*" required><label class="dim">🤳 Rostro</label><input type="file" id="kycFace" accept="image/*" required><button type="submit" class="btn-primary">Enviar</button></form>`;
   document.querySelector('.app-main').appendChild(kyc);
   const mc = document.querySelector('#modal-recharge .modal-content');
-  if (mc) mc.innerHTML = `
-    <div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div>
-    <p class="dim">El pago lo verifica el administrador (o el bot Binance). Mínimo 3 tokens ($3).</p>
-    <div class="owner-form">
-      <input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3">
-      <select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select>
-      <input type="text" id="reqRef" placeholder="Nº de referencia / hash">
-      <label class="dim">📸 Captura del pago</label><input type="file" id="reqProof" accept="image/*">
-      <button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar a verificación</button>
-    </div>
-    <h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
+  if (mc) mc.innerHTML = `<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3).</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura</label><input type="file" id="reqProof" accept="image/*"><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
   const recBtn = document.querySelector('#section-tokens .row-buttons .btn-primary');
   if (recBtn) recBtn.onclick = async () => { openModal('modal-recharge'); await loadScript('tokens.js'); loadMyRecharges(); };
   const tabs = document.querySelector('.admin-tabs');
   if (tabs && !tabs.querySelector('[data-workers-tab]')) {
     tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-workers-tab onclick="switchAdminTab('workers',this)">💃 Trabajadoras</button>`);
     const p1 = document.createElement('div'); p1.id = 'admin-workers'; p1.className = 'admin-panel';
-    p1.innerHTML = `<p class="dim">Asigna nivel (1-5) o tarifa (0.2 – 3 $/min).</p><div id="adminWorkersList" class="list-compact"></div>`;
+    p1.innerHTML = `<p class="dim">Asigna nivel y tarifa.</p><div id="adminWorkersList" class="list-compact"></div>`;
     document.getElementById('section-admin').appendChild(p1);
   }
   if (tabs && !tabs.querySelector('[data-recharges-tab]')) {
     tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-recharges-tab onclick="switchAdminTab('recharges',this)">💳 Recargas</button>`);
     const p2 = document.createElement('div'); p2.id = 'admin-recharges'; p2.className = 'admin-panel';
-    p2.innerHTML = `<p class="dim">Verifica el monto exacto antes de aprobar.</p><div id="rechargeRequestsList" class="list-compact"></div>`;
+    p2.innerHTML = `<div id="rechargeRequestsList" class="list-compact"></div>`;
     document.getElementById('section-admin').appendChild(p2);
   }
   if (tabs && !tabs.querySelector('[data-safety-tab]')) {
     tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-safety-tab onclick="switchAdminTab('safety',this)">🚨 Seguridad</button>`);
     const p3 = document.createElement('div'); p3.id = 'admin-safety'; p3.className = 'admin-panel';
-    p3.innerHTML = `<h3 class="sub-title">🆘 Alertas de pánico</h3><div id="panicList" class="list-compact"></div>
-      <h3 class="sub-title">🚩 Reportes y auto-moderación</h3><div id="reportsList" class="list-compact"></div>`;
+    p3.innerHTML = `<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>`;
     document.getElementById('section-admin').appendChild(p3);
   }
 }
@@ -234,7 +161,7 @@ async function sendPanic(context, callId) {
   const pos = await getPos();
   await db.from('panic_alerts').insert({ user_id: currentUser.id, context: context || 'general', call_id: callId || null, latitude: pos?.lat || null, longitude: pos?.lng || null });
   navigator.vibrate?.([400, 150, 400]);
-  showToast('🆘 Alerta enviada al admin con tu ubicación');
+  showToast('🆘 Alerta enviada al admin');
 }
 async function reportUser(targetId, reason) {
   await db.from('reports').insert({ reporter_id: currentUser.id, target_user_id: targetId, type: 'user', detail: reason });
@@ -260,9 +187,7 @@ function updateHeader() {
   document.body.classList.toggle('has-banner', inactive);
 }
 function toggleUserMenu() { document.getElementById('userMenu').classList.toggle('hidden'); }
-document.addEventListener('click', e => {
-  if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden');
-});
+document.addEventListener('click', e => { if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden'); });
 async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
 function loadModules() {
@@ -278,28 +203,11 @@ function loadModules() {
   if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', icon: '🪪', n: 'Mi Verificación' });
   if (currentProfile.role === 'delivery') mods.splice(7, 0, { id: 'delivery', icon: '🛵', n: 'Zona Domiciliario' });
   if (currentProfile.role === 'admin') mods.unshift({ id: 'admin', icon: '🛡️', n: 'Panel Admin' });
-  document.getElementById('modulesGrid').innerHTML = mods.map(m =>
-    `<div class="module-card" onclick="showSection('${m.id}')"><span class="icon">${m.icon}</span><h3>${m.n}</h3></div>`).join('');
+  document.getElementById('modulesGrid').innerHTML = mods.map(m => `<div class="module-card" onclick="showSection('${m.id}')"><span class="icon">${m.icon}</span><h3>${m.n}</h3></div>`).join('');
 }
-const MODULE_FILES = {
-  map: 'map.js', radar: 'radar.js', events: 'radar.js', restaurants: 'restaurants.js', reservations: 'restaurants.js',
-  orders: 'orders.js', delivery: 'delivery.js', remote: 'remote.js', girls: 'remote.js', kyc: 'remote.js',
-  marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js', calls: 'calls.js'
-};
-const LOADERS = {
-  map: () => { initMap(); autoLocate(); loadMapUsers(); },
-  radar: () => loadRadar(), events: () => loadEvents(),
-  restaurants: () => loadRestaurants(), reservations: () => loadReservations(),
-  orders: () => loadOrders(), delivery: () => loadDeliveryHub(),
-  remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(),
-  marketplace: () => loadMarketplace(), chat: () => loadConversations(), tokens: () => loadTransactions(),
-  profile: () => loadProfileSection(), profileedit: () => fillProfilePro(), admin: () => loadAdmin()
-};
-function loadScript(file) {
-  if (loadedScripts[file]) return loadedScripts[file];
-  loadedScripts[file] = new Promise(res => { const s = document.createElement('script'); s.src = 'js/' + file; s.onload = res; s.onerror = res; document.body.appendChild(s); });
-  return loadedScripts[file];
-}
+const MODULE_FILES = { map: 'map.js', radar: 'radar.js', events: 'radar.js', restaurants: 'restaurants.js', reservations: 'restaurants.js', orders: 'orders.js', delivery: 'delivery.js', remote: 'remote.js', girls: 'remote.js', kyc: 'remote.js', marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js', calls: 'calls.js' };
+const LOADERS = { map: () => { initMap(); autoLocate(); loadMapUsers(); }, radar: () => loadRadar(), events: () => loadEvents(), restaurants: () => loadRestaurants(), reservations: () => loadReservations(), orders: () => loadOrders(), delivery: () => loadDeliveryHub(), remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(), marketplace: () => loadMarketplace(), chat: () => loadConversations(), tokens: () => loadTransactions(), profile: () => loadProfileSection(), profileedit: () => fillProfilePro(), admin: () => loadAdmin() };
+function loadScript(file) { if (loadedScripts[file]) return loadedScripts[file]; loadedScripts[file] = new Promise(res => { const s = document.createElement('script'); s.src = 'js/' + file; s.onload = res; s.onerror = res; document.body.appendChild(s); }); return loadedScripts[file]; }
 async function showSection(name) {
   document.querySelectorAll('.app-section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + name)?.classList.add('active');
@@ -310,6 +218,30 @@ async function showSection(name) {
   if (MODULE_FILES[name]) await loadScript(MODULE_FILES[name]);
   if (LOADERS[name]) { try { await LOADERS[name](); } catch (e) { console.error(e); } }
 }
+function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function getPos() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    const opts = isIOS() ? { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 } : { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+    navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), err => {
+      if (err.code === 1) { showToast(isIOS() ? '📍 iOS: Ajustes → Privacidad → Localización → Safari → permitir' : '📍 Permiso de ubicación denegado'); return res(null); }
+      navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { enableHighAccuracy: !opts.enableHighAccuracy, timeout: 15000, maximumAge: 60000 });
+    }, opts);
+  });
+}
+async function toggleShareLocation() {
+  const btn = document.getElementById('btnShareLocation');
+  if (sharing) { sharing = false; if (shareTimer) clearInterval(shareTimer); await db.from('user_locations').update({ is_sharing: false }).eq('user_id', currentUser.id); if (btn) btn.textContent = '📡 Compartir ubicación'; showToast('📴 Dejaste de compartir'); return; }
+  const first = await getPos(); if (!first) return;
+  sharing = true; myLocation = first;
+  await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: first.lat, longitude: first.lng, is_sharing: true }, { onConflict: 'user_id' });
+  if (btn) btn.textContent = '🔴 EN VIVO (tocar para parar)';
+  if (map) map.setView([first.lat, first.lng], 14);
+  loadMapUsers();
+  shareTimer = setInterval(async () => { const p = await getPos(); if (!p || !sharing) return; myLocation = p; await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: p.lat, longitude: p.lng, is_sharing: true }, { onConflict: 'user_id' }); loadMapUsers(); }, 6000);
+  showToast('📡 Compartiendo ubicación');
+}
+function autoLocate() { if (!sharing) toggleShareLocation(); }
 function haversine(a, b, c, d) { const R = 6371000, t = x => x * Math.PI / 180; const dLa = t(c - a), dLo = t(d - b); const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a)) * Math.cos(t(c)) * Math.sin(dLo / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)); }
 function fmtDist(m) { return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km'; }
 function stars(r) { const n = Math.round(parseFloat(r) || 0); return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
@@ -319,9 +251,9 @@ function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); 
 function showToast(msg) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._tt); window._tt = setTimeout(() => t.classList.add('hidden'), 2800); }
 async function deductTokens(amount, desc) {
   if (currentProfile.unlimited_tokens) return;
-  if (currentProfile.tokens_locked) { showToast('🔒 Tus tokens están bloqueados por el administrador'); return; }
+  if (currentProfile.tokens_locked) { showToast('🔒 Tokens bloqueados por el admin'); return; }
   const avail = parseFloat(currentProfile.tokens_balance || 0) - parseFloat(currentProfile.tokens_retained || 0);
-  if (avail < amount) { showToast('❌ Saldo disponible insuficiente (retención activa)'); return; }
+  if (avail < amount) { showToast('❌ Saldo disponible insuficiente'); return; }
   const nb = parseFloat(currentProfile.tokens_balance) - amount;
   await db.from('profiles').update({ tokens_balance: nb }).eq('id', currentUser.id);
   await db.from('token_transactions').insert({ user_id: currentUser.id, amount: -amount, type: 'consumption', description: desc });
@@ -333,12 +265,23 @@ async function addTokens(amount, desc) {
   await db.from('token_transactions').insert({ user_id: currentUser.id, amount, type: 'transfer', description: desc });
   currentProfile.tokens_balance = nb; updateHeader();
 }
+
 function startRealtime() {
   if (liveChannel) return;
   liveChannel = db.channel('fendyx-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO!'); navigator.vibrate?.([300, 100, 300]); } })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => { if (p.new.id === currentUser.id) loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); }); })
+    // NIVELES / TARIFAS EN TIEMPO REAL EN TODOS LOS APARTADOS
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'role_details' }, p => {
+      if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
+      if (typeof loadWorkers === 'function' && document.getElementById('section-remote')?.classList.contains('active')) loadWorkers();
+      if (typeof loadWorkersAdmin === 'function' && document.getElementById('admin-workers')?.classList.contains('active')) loadWorkersAdmin();
+      if (p.new && p.new.user_id === currentUser.id && typeof loadWorkers === 'function') loadWorkers();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => {
+      if (p.new.id === currentUser.id) loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); });
+      if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
+    })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharge_requests' }, p => { if (p.new.user_id === currentUser.id) { showToast(p.new.status === 'approved' ? '✅ Recarga aprobada' : p.new.status === 'rejected' ? '❌ Recarga rechazada' : ''); updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); } })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, async p => { if (p.new.worker_id === currentUser.id && p.new.status === 'active') { navigator.vibrate?.([300, 120, 300]); await loadScript('calls.js'); if (typeof showIncomingCall === 'function') showIncomingCall(p.new); } })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, async p => { if (p.new.status === 'ended' && (p.new.worker_id === currentUser.id || p.new.client_id === currentUser.id)) { await loadScript('calls.js'); if (typeof remoteHungUp === 'function') remoteHungUp(p.new); } })

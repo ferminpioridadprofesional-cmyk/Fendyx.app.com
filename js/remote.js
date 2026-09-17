@@ -11,10 +11,10 @@ function injectGirlStyle() {
   st.id = 'fendyx-girl-style';
   st.textContent = `
     .girl-card{padding:14px}
-    .girl-photo{width:100%;height:220px;border-radius:14px;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
-    .girl-photo img{width:100%;height:100%;object-fit:cover;object-position:center}
+    .girl-photo{width:64%;max-width:210px;height:170px;margin:0 auto;border-radius:14px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
+    .girl-photo img{width:100%;height:100%;object-fit:contain;object-position:center}
     .girl-initial{font-size:3rem;color:var(--dim)}
-    .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+    .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;justify-content:center}
     .girl-thumbs img{width:52px;height:52px;object-fit:cover;object-position:center;border-radius:9px;border:1px solid var(--border);cursor:pointer}
     .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
     .pf-hero{display:flex;gap:14px;align-items:center;margin-bottom:12px;position:relative}
@@ -42,8 +42,6 @@ function injectGirlStyle() {
     .wk-pro{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:12px}`;
   document.head.appendChild(st);
 }
-
-// ===== VISOR DE FOTOS PROPIO (pantalla completa + deslizar) =====
 function ensureWkLightbox() {
   if (document.getElementById('wkLightbox')) return;
   const lb = document.createElement('div'); lb.id = 'wkLightbox'; lb.className = 'lb-wrap hidden'; document.body.appendChild(lb);
@@ -51,26 +49,14 @@ function ensureWkLightbox() {
   lb.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - wkLbX; if (dx > 50) wkLbStep(-1); else if (dx < -50) wkLbStep(1); });
 }
 function wkOpenLightbox(urls, idx) {
-  ensureWkLightbox();
-  wkLbUrls = urls || []; wkLbIdx = idx || 0;
+  ensureWkLightbox(); wkLbUrls = urls || []; wkLbIdx = idx || 0;
   const lb = document.getElementById('wkLightbox');
-  lb.innerHTML = `<button class="lb-close" onclick="wkCloseLightbox()">✕</button>
-    <button class="lb-btn lb-prev" onclick="wkLbStep(-1)">‹</button>
-    <img src="${wkLbUrls[wkLbIdx] || ''}">
-    <button class="lb-btn lb-next" onclick="wkLbStep(1)">›</button>
-    <div class="lb-dots">${wkLbUrls.map((_, i) => `<span class="${i === wkLbIdx ? 'on' : ''}"></span>`).join('')}</div>`;
+  lb.innerHTML = `<button class="lb-close" onclick="wkCloseLightbox()">✕</button><button class="lb-btn lb-prev" onclick="wkLbStep(-1)">‹</button><img src="${wkLbUrls[wkLbIdx] || ''}"><button class="lb-btn lb-next" onclick="wkLbStep(1)">›</button><div class="lb-dots">${wkLbUrls.map((_, i) => `<span class="${i === wkLbIdx ? 'on' : ''}"></span>`).join('')}</div>`;
   lb.classList.remove('hidden');
 }
 function wkLbStep(d) { wkLbIdx = (wkLbIdx + d + wkLbUrls.length) % wkLbUrls.length; wkOpenLightbox(wkLbUrls, wkLbIdx); }
 function wkCloseLightbox() { document.getElementById('wkLightbox')?.classList.add('hidden'); }
-
-// ===== MODAL DE PERFIL DE MODELO PROPIO =====
-function ensureWkModal() {
-  if (document.getElementById('wkProfileModal')) return;
-  const m = document.createElement('div'); m.id = 'wkProfileModal'; m.className = 'modal hidden';
-  m.innerHTML = `<div class="modal-content wide" id="wkModalContent"></div>`;
-  document.body.appendChild(m);
-}
+function ensureWkModal() { if (document.getElementById('wkProfileModal')) return; const m = document.createElement('div'); m.id = 'wkProfileModal'; m.className = 'modal hidden'; m.innerHTML = `<div class="modal-content wide" id="wkModalContent"></div>`; document.body.appendChild(m); }
 function renderWkProfile(data, preview) {
   ensureWkModal(); injectGirlStyle();
   const rd = data.role_details?.[0];
@@ -95,20 +81,9 @@ function renderWkProfile(data, preview) {
     <div style="margin-top:12px">${preview ? '<p class="dim">Vista previa (solo lectura)</p>' : `<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${rate})">📹 Llamar · ◈ ${rate}/min</button>`}</div>`;
   openModal('wkProfileModal');
 }
-async function openWorkerProfile(id) {
-  const { data } = await db.from('profiles').select('*, role_details(*)').eq('id', id).single();
-  if (!data) return;
-  renderWkProfile(data, false);
-}
-async function previewWorkerProfile() {
-  renderWkProfile(Object.assign({}, currentProfile, { role_details: roleDetails ? [roleDetails] : [] }), true);
-}
-async function openGirlGallery(idx, i) {
-  const g = (_girlsList[idx]?.gallery) || [];
-  if (!g.length) return;
-  wkOpenLightbox(g, i);
-}
-
+async function openWorkerProfile(id) { const { data } = await db.from('profiles').select('*, role_details(*)').eq('id', id).single(); if (!data) return; renderWkProfile(data, false); }
+async function previewWorkerProfile() { renderWkProfile(Object.assign({}, currentProfile, { role_details: roleDetails ? [roleDetails] : [] }), true); }
+async function openGirlGallery(idx, i) { const g = (_girlsList[idx]?.gallery) || []; if (!g.length) return; wkOpenLightbox(g, i); }
 function girlCard(w, idx) {
   const lvNum = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
   const rate = parseFloat(w.rate_per_minute) || levelInfo(lvNum).rate;
@@ -129,26 +104,13 @@ function girlCard(w, idx) {
     </div>
   </div>`;
 }
-async function fetchPublicWorkers() {
-  const { data, error } = await db.rpc('get_public_workers');
-  if (error) { showToast('❌ ' + error.message); return []; }
-  return (typeof data === 'string' ? JSON.parse(data) : data) || [];
-}
-async function loadGirls() {
-  if (!requireActive()) return;
-  injectGirlStyle();
-  _girlsList = await fetchPublicWorkers();
-  document.getElementById('girlsGrid').innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
-}
-
+async function fetchPublicWorkers() { const { data, error } = await db.rpc('get_public_workers'); if (error) { showToast('❌ ' + error.message); return []; } return (typeof data === 'string' ? JSON.parse(data) : data) || []; }
+async function loadGirls() { if (!requireActive()) return; injectGirlStyle(); _girlsList = await fetchPublicWorkers(); document.getElementById('girlsGrid').innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>'; }
 async function loadWorkers() {
   const isWorker = currentProfile.role === 'remote_worker';
-  const grid = document.getElementById('workersGrid');
-  const panel = document.getElementById('workerPanel');
+  const grid = document.getElementById('workersGrid'); const panel = document.getElementById('workerPanel');
   if (isWorker) {
-    injectGirlStyle();
-    grid.style.display = 'none'; grid.innerHTML = '';
-    panel.classList.remove('hidden');
+    injectGirlStyle(); grid.style.display = 'none'; grid.innerHTML = ''; panel.classList.remove('hidden');
     const p = currentProfile;
     const lvNum = Math.min(5, Math.max(1, parseInt(roleDetails?.worker_level) || 1));
     const rate = roleDetails?.rate_per_minute != null ? roleDetails.rate_per_minute : levelInfo(lvNum).rate;
@@ -156,22 +118,17 @@ async function loadWorkers() {
     _we.interests = new Set(p.interests || []); _we.preferences = new Set(p.preferences || []); _we.zodiac = p.zodiac || null;
     const INTERESTS = ['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
     const PREFERENCES = ['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
-    const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+    const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
     panel.innerHTML = `<h3>💼 Mi Trabajo</h3>
       <div class="wk-card tier-${lvNum}">
         <div class="wk-name">🎭 ${p.model_name || 'Modelo'}</div>
         <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">◈ ${rate}/min</span></div>
         <div class="wk-kyc">${p.kyc_status === 'approved' ? '✅ Verificación KYC aprobada' : '⏳ Verificación KYC pendiente'}</div>
-        <div class="wk-switch-row">
-          <span id="wkState" class="wk-state ${on ? 'on' : 'off'}">${on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'}</span>
-          <label class="wk-switch"><input type="checkbox" id="wkToggle" ${on ? 'checked' : ''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label>
-        </div>
+        <div class="wk-switch-row"><span id="wkState" class="wk-state ${on ? 'on' : 'off'}">${on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'}</span>
+          <label class="wk-switch"><input type="checkbox" id="wkToggle" ${on ? 'checked' : ''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label></div>
         <p class="dim" style="margin-top:12px">Solo recibes llamadas con la app/página <b>abierta</b> y el switch en verde.</p>
-        <div class="row-buttons" style="margin-top:10px">
-          <button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button>
-        </div>
-        <div class="wk-pro">
-          <h4 class="sub-title">🎭 Mi Perfil de Modelo (solo visible en Videollamada con chicas)</h4>
+        <div class="row-buttons" style="margin-top:10px"><button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button></div>
+        <div class="wk-pro"><h4 class="sub-title">🎭 Mi Perfil de Modelo (solo visible en Videollamada con chicas)</h4>
           <form class="owner-form" onsubmit="saveWorkerPro(event)">
             <label class="dim">Nombre artístico</label><input type="text" id="wpModel" value="${p.model_name || ''}">
             <label class="dim">Fotos de modelo (máx 5)</label><input type="file" id="wpGallery" accept="image/*" multiple>
@@ -181,14 +138,10 @@ async function loadWorkers() {
             <label class="dim">💫 Preferencias</label><div class="chips-row">${PREFERENCES.map(i => `<span class="chip ${_we.preferences.has(i) ? 'active' : ''}" onclick="toggleWChip(this,'preferences','${i}')">${i}</span>`).join('')}</div>
             <label class="dim">✨ Zodiaco</label><div class="chips-row">${ZODIAC.map(z => `<span class="chip wz-chip ${_we.zodiac === z ? 'active' : ''}" onclick="pickWZodiac(this,'${z}')">${z}</span>`).join('')}</div>
             <button type="submit" class="btn-primary">💾 Guardar Perfil de Modelo</button>
-          </form>
-        </div>
-      </div>`;
+          </form></div></div>`;
     return;
   }
-  injectGirlStyle();
-  grid.style.display = '';
-  panel.classList.add('hidden');
+  injectGirlStyle(); grid.style.display = ''; panel.classList.add('hidden');
   _girlsList = await fetchPublicWorkers();
   grid.innerHTML = _girlsList.map((w, i) => girlCard(w, i)).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
@@ -199,8 +152,7 @@ async function saveWorkerPro(e) {
   const files = Array.from(document.getElementById('wpGallery').files || []);
   if (files.length) { let g = [...(p.worker_gallery || [])]; for (const f of files) { if (g.length >= 5) { showToast('⚠️ Máx 5 fotos'); break; } const path = 'wgallery/' + currentUser.id + '_' + Date.now() + '_' + f.name.replace(/[^a-zA-Z0-9.]/g, '_'); const r = await db.storage.from('fendyx-assets').upload(path, f); if (!r.error) g.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl); } up.worker_gallery = g.slice(0, 5); }
   await db.from('profiles').update(up).eq('id', currentUser.id);
-  await loadProfile(); loadWorkers();
-  showToast('✅ Perfil de Modelo guardado');
+  await loadProfile(); loadWorkers(); showToast('✅ Perfil de Modelo guardado');
 }
 async function setWorkerOnline(on) {
   localStorage.setItem('fendyx_online_intent', on ? '1' : '0');
@@ -209,23 +161,8 @@ async function setWorkerOnline(on) {
   if (st) { st.className = 'wk-state ' + (on ? 'on' : 'off'); st.textContent = on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'; }
   showToast(on ? '🟢 En línea: te pueden llamar' : '🔴 Desconectada');
 }
-function fillKycForm() {
-  const p = currentProfile;
-  const box = document.getElementById('kycStatusBox');
-  const st = { none: '⚪ No aplica', pending: '⏳ Pendiente', approved: '✅ Verificada', rejected: '❌ Rechazada: ' + (p.kyc_note || '') }[p.kyc_status] || '⚪';
-  box.innerHTML = `<h3>Verificación</h3><p>${st}</p><p class="dim">Real: <b>${p.full_name || '—'}</b> · Artístico: <b>${p.model_name || '—'}</b></p>${p.id_card_url ? `<img class="kyc-img" src="${p.id_card_url}">` : ''}${p.face_photo_url ? `<img class="kyc-img" src="${p.face_photo_url}">` : ''}`;
-  document.getElementById('kycWhatsapp').value = p.whatsapp || '';
-}
-async function submitKycDocs(e) {
-  e.preventDefault();
-  const up = { whatsapp: document.getElementById('kycWhatsapp').value, kyc_status: 'pending' };
-  const idf = document.getElementById('kycIdCard').files[0];
-  const fcf = document.getElementById('kycFace').files[0];
-  if (idf) { const p1 = 'kyc/' + currentUser.id + '_id_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p1, idf); if (!r.error) up.id_card_url = db.storage.from('fendyx-assets').getPublicUrl(p1).data.publicUrl; }
-  if (fcf) { const p2 = 'kyc/' + currentUser.id + '_face_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p2, fcf); if (!r.error) up.face_photo_url = db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl; }
-  await db.from('profiles').update(up).eq('id', currentUser.id);
-  await loadProfile(); fillKycForm(); showToast('📨 Enviado');
-}
+function fillKycForm() { const p = currentProfile; const box = document.getElementById('kycStatusBox'); const st = { none: '⚪ No aplica', pending: '⏳ Pendiente', approved: '✅ Verificada', rejected: '❌ Rechazada: ' + (p.kyc_note || '') }[p.kyc_status] || '⚪'; box.innerHTML = `<h3>Verificación</h3><p>${st}</p><p class="dim">Real: <b>${p.full_name || '—'}</b> · Artístico: <b>${p.model_name || '—'}</b></p>${p.id_card_url ? `<img class="kyc-img" src="${p.id_card_url}">` : ''}${p.face_photo_url ? `<img class="kyc-img" src="${p.face_photo_url}">` : ''}`; document.getElementById('kycWhatsapp').value = p.whatsapp || ''; }
+async function submitKycDocs(e) { e.preventDefault(); const up = { whatsapp: document.getElementById('kycWhatsapp').value, kyc_status: 'pending' }; const idf = document.getElementById('kycIdCard').files[0]; const fcf = document.getElementById('kycFace').files[0]; if (idf) { const p1 = 'kyc/' + currentUser.id + '_id_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p1, idf); if (!r.error) up.id_card_url = db.storage.from('fendyx-assets').getPublicUrl(p1).data.publicUrl; } if (fcf) { const p2 = 'kyc/' + currentUser.id + '_face_' + Date.now() + '.jpg'; const r = await db.storage.from('fendyx-assets').upload(p2, fcf); if (!r.error) up.face_photo_url = db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl; } await db.from('profiles').update(up).eq('id', currentUser.id); await loadProfile(); fillKycForm(); showToast('📨 Enviado'); }
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
   if (currentProfile.role !== 'admin' && currentProfile.kyc_status !== 'approved') { showToast('🪪 Verifica tu identidad (cédula + rostro) en Mi Perfil para llamar'); showSection('profile'); return; }

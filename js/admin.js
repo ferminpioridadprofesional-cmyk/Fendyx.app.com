@@ -1,12 +1,5 @@
 'use strict';
 let adminUsersCache = [], kycTarget = null;
-const LOCAL_LEVELS = [
-  { level: 1, name: 'Bronce', rate: 0.2 },
-  { level: 2, name: 'Plata', rate: 0.7 },
-  { level: 3, name: 'Oro', rate: 1.2 },
-  { level: 4, name: 'Platino', rate: 2.0 },
-  { level: 5, name: 'Diamante', rate: 3.0 }
-];
 
 async function loadAdmin() {
   if (currentProfile.role !== 'admin') { showSection('dashboard'); showToast('🚫 Acceso denegado'); return; }
@@ -142,6 +135,7 @@ async function openUserFile(id) {
     db.from('panic_alerts').select('*', { count: 'exact', head: true }).eq('user_id', id)
   ]);
   const d = rd.data || {};
+  const lvNum = Math.min(5, Math.max(1, parseInt(d.worker_level) || 1));
   document.getElementById('ufTitle').textContent = '👁 Ficha: ' + (u.model_name || u.full_name || u.email);
   document.getElementById('ufBody').innerHTML = `
     <div class="dim" style="text-align:left">
@@ -151,8 +145,9 @@ async function openUserFile(id) {
       <b>Género:</b> ${u.gender || '—'} · <b>Edad:</b> ${u.age || '—'}<br>
       <b>WhatsApp:</b> ${u.whatsapp ? `<a target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">${u.whatsapp}</a>` : '—'}<br>
       <b>Rol:</b> ${ROLE_LABELS[u.role]} · <b>KYC:</b> ${u.kyc_status} · <b>Verificado:</b> ${u.is_verified ? 'Sí' : 'No'}<br>
+      ${u.role === 'remote_worker' ? `<b>Nivel:</b> ${levelBadge(lvNum)} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || levelInfo(lvNum).rate}/min<br>` : ''}
       <b>Ocupación:</b> ${u.occupation || '—'} · <b>Zodiaco:</b> ${u.zodiac || '—'}<br>
-      <b>Especialidad:</b> ${d.specialty || '—'} · <b>Nivel:</b> ${levelInfo(d.worker_level).name} · <b>Tarifa:</b> ◈ ${d.rate_per_minute || '—'}/min<br>
+      <b>Especialidad:</b> ${d.specialty || '—'}<br>
       <b>Intereses:</b> ${(u.interests || []).join(', ') || '—'}<br>
       <b>Preferencias:</b> ${(u.preferences || []).join(', ') || '—'}<br>
       <b>Bio:</b> ${u.bio || d.bio || '—'}<br>
@@ -163,20 +158,15 @@ async function openUserFile(id) {
     </div>
     ${u.role === 'remote_worker' ? `
     <h4 class="sub-title">🎭 Nombre artístico</h4>
-    <div class="owner-form">
-      <input type="text" id="ufModelName" placeholder="Nombre artístico / de modelo" value="${u.model_name || ''}">
-      <button class="btn-primary" onclick="saveModelName('${u.id}')">💾 Guardar nombre artístico</button>
-    </div>` : ''}
+    <div class="owner-form"><input type="text" id="ufModelName" placeholder="Nombre artístico" value="${u.model_name || ''}">
+    <button class="btn-primary" onclick="saveModelName('${u.id}')">💾 Guardar nombre artístico</button></div>` : ''}
     <h4 class="sub-title">◈ Control de tokens</h4>
     <div class="owner-form" style="text-align:left">
       <div class="dim">Saldo: <b>${parseFloat(u.tokens_balance || 0).toFixed(2)}</b> · Bloqueado: <b>${u.tokens_locked ? 'SÍ 🔒' : 'No'}</b> · Retención: <b>${parseFloat(u.tokens_retained || 0).toFixed(2)}</b></div>
       <input type="number" id="ufBalance" step="0.01" placeholder="Nuevo saldo absoluto" value="${parseFloat(u.tokens_balance || 0).toFixed(2)}">
-      <div class="row-buttons">
-        <button class="btn-small success" onclick="ufAdj(1)">+ Sumar</button>
-        <button class="btn-small danger" onclick="ufAdj(-1)">− Restar</button>
-      </div>
+      <div class="row-buttons"><button class="btn-small success" onclick="ufAdj(1)">+ Sumar</button><button class="btn-small danger" onclick="ufAdj(-1)">− Restar</button></div>
       <input type="number" id="ufAdjAmt" step="0.01" placeholder="Monto a sumar/restar">
-      <input type="number" id="ufRetained" step="0.01" placeholder="Retención (tokens congelados)" value="${parseFloat(u.tokens_retained || 0).toFixed(2)}">
+      <input type="number" id="ufRetained" step="0.01" placeholder="Retención (congelados)" value="${parseFloat(u.tokens_retained || 0).toFixed(2)}">
       <label class="check-line"><input type="checkbox" id="ufLocked" ${u.tokens_locked ? 'checked' : ''}> 🔒 Bloquear TODOS sus tokens</label>
       <input type="text" id="ufReason" placeholder="Razón del ajuste (auditoría)">
       <button class="btn-primary" onclick="saveUserTokens('${u.id}')">💾 Guardar tokens</button>
@@ -324,7 +314,6 @@ async function loadKycList() {
   const { data } = await db.from('profiles').select('*').eq('role', 'remote_worker').eq('kyc_status', 'pending').order('created_at', { ascending: false });
   document.getElementById('kycList').innerHTML = (data || []).map(u =>
     `<div class="row-item"><div class="row-main"><b>${u.model_name || u.full_name || '—'} ${u.age ? '· ' + u.age + ' años' : ''}</b><small>Real: ${u.full_name || '—'} · ${u.email}</small>
-     <small>${u.whatsapp || '—'}${u.model_name ? ' · 🎭 ' + u.model_name : ''}</small>
      <div>${u.id_card_url ? `<img class="kyc-img" src="${u.id_card_url}" onclick="window.open('${u.id_card_url}')">` : '⚠️ sin cédula'}${u.face_photo_url ? `<img class="kyc-img" src="${u.face_photo_url}" onclick="window.open('${u.face_photo_url}')">` : ''}</div>
      ${u.whatsapp ? `<a class="btn-small" target="_blank" href="https://wa.me/${(u.whatsapp || '').replace(/[^0-9]/g, '')}">💬</a>` : ''}</div>
      <div class="row-actions"><button class="btn-small success" onclick="startKyc('${u.id}','${(u.model_name || u.full_name || '').replace(/'/g, '')}')">🎥</button><button class="btn-small success" onclick="approveKyc('${u.id}')">✅</button><button class="btn-small danger" onclick="rejectKyc('${u.id}')">❌</button></div></div>`).join('')
@@ -341,22 +330,19 @@ async function startKyc(userId, name) {
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); showToast('✅ Verificada'); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
-// TRABAJADORAS: selector de nivel GARANTIZADO (con fallback LOCAL_LEVELS si la BD falla)
+// TRABAJADORAS: nivel con icono distintivo + actualización en tiempo real (vía core)
 async function loadWorkersAdmin() {
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
-  let lv = LOCAL_LEVELS;
-  try {
-    const r = await db.from('worker_levels').select('*').order('level');
-    if (r.data && r.data.length) lv = r.data;
-  } catch (e) { /* usamos fallback */ }
+  let lv = Object.values(LEVEL_META);
+  try { const r = await db.from('worker_levels').select('*').order('level'); if (r.data && r.data.length) lv = r.data; } catch (e) {}
   document.getElementById('adminWorkersList').innerHTML = (data || []).map(w => {
     const rd = w.role_details?.[0];
-    const curLevel = rd?.worker_level || 1;
-    const curRate = parseFloat(rd?.rate_per_minute) || levelInfo(curLevel).rate;
-    return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>Real: ${w.full_name} · ${levelInfo(curLevel).name} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
+    const cur = Math.min(5, Math.max(1, parseInt(rd?.worker_level) || 1));
+    const curRate = parseFloat(rd?.rate_per_minute) || levelInfo(cur).rate;
+    return `<div class="row-item"><div class="row-main"><b>${w.model_name || w.full_name}</b><small>Real: ${w.full_name} · ${levelBadge(cur)} · ◈ ${curRate}/min · ⭐ ${w.rating || 5}</small></div>
      <div class="row-actions">
        <select class="btn-small" onchange="setWorkerLevel('${w.id}', this.value)">
-         ${lv.map(l => `<option value="${l.level}" ${curLevel === l.level ? 'selected' : ''}>${l.level}. ${l.name} ($${l.rate})</option>`).join('')}
+         ${lv.map(l => `<option value="${l.level}" ${cur === l.level ? 'selected' : ''}>${l.level}. ${l.name} ($${l.rate})</option>`).join('')}
        </select>
        <input type="number" step="0.1" min="0.2" max="3" value="${curRate}" style="width:80px" class="btn-small" id="rate_${w.id}">
        <button class="btn-small success" onclick="setWorkerRate('${w.id}')">💾</button>
@@ -364,9 +350,8 @@ async function loadWorkersAdmin() {
   }).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
 async function setWorkerLevel(id, level) {
-  let lvl = LOCAL_LEVELS.find(x => x.level === parseInt(level));
+  let lvl = LEVEL_META[parseInt(level)] || LEVEL_META[1];
   try { const r = await db.from('worker_levels').select('*').eq('level', parseInt(level)).single(); if (r.data) lvl = r.data; } catch (e) {}
-  if (!lvl) { showToast('Nivel inválido'); return; }
   await db.from('role_details').update({ worker_level: lvl.level, rate_per_minute: lvl.rate }).eq('user_id', id);
   showToast('✅ ' + lvl.name); loadWorkersAdmin();
 }

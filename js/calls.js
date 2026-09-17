@@ -2,20 +2,22 @@
 let pc = null, localStream = null, callChannel = null, callRoom = null;
 let callSeconds = 0, callClock = null, callCostTotal = 0, callRowId = null, callRate = 0, iAmClientFlag = false, isInitiatorFlag = false;
 let callSetupDone = false, facingMode = 'user';
-let offerSent = false, pendingCandidates = [], reconnectAttempts = 0, currentPolicy = 'all';
+let offerSent = false, pendingCandidates = [], currentPolicy = 'all';
 let peerPresent = false, gotAnswer = false, gotOffer = false;
-let helloTimer = null, ackTimer = null, offerTimer = null;
-let micOn = true, camOn = true;
+let helloTimer = null, ackTimer = null, offerTimer = null, watchdog = null, lastReconnectAt = 0;
+let micOn = true, camOn = true, netListenersOn = false;
 
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.voip.blackberry.com:3478' },
   { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443'], username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: ['turn:relay.backups.cz:3478', 'turn:relay.backups.cz:5349?transport=tcp', 'turns:relay.backups.cz:5349'], username: 'webrtc', credential: 'webrtc' }
 ];
 const LADDER = ['all', 'relay', 'all', 'relay'];
 
 function setStatus(t) { const m = document.getElementById('callStatusMsg'); if (m) m.textContent = t; }
+function setChatState(t, ok) { const c = document.getElementById('chatState'); if (c) { c.textContent = t; c.style.color = ok ? 'var(--success)' : 'var(--dim)'; } }
 function clearHello() { if (helloTimer) { clearInterval(helloTimer); helloTimer = null; } }
 function clearAck() { if (ackTimer) { clearInterval(ackTimer); ackTimer = null; } }
 function clearOffer() { if (offerTimer) { clearInterval(offerTimer); offerTimer = null; } }
@@ -30,6 +32,8 @@ function ensureCallUI() {
     #localVideo{position:absolute;right:10px;bottom:10px;width:105px;height:140px;object-fit:cover;border-radius:12px;border:2px solid var(--border-strong);background:#111;transition:opacity .2s,filter .2s}
     #localVideo.camoff{opacity:.15;filter:grayscale(1)}
     #callStatusMsg{position:absolute;top:10px;left:12px;background:rgba(0,0,0,.55);padding:4px 10px;border-radius:999px;font-size:.8rem}
+    .call-info{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,217,255,.08);border:1px solid var(--border);border-radius:13px;font-family:'Orbitron';font-weight:800;color:var(--primary);flex-wrap:wrap}
+    .chat-state{font-family:'Rajdhani';font-weight:700;font-size:.85rem}
     .call-controls{display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
     .call-controls .btn-small{padding:11px 14px;font-size:.9rem}
     .call-controls .btn-small.off{opacity:.6;border-color:var(--error);color:var(--error)}
@@ -45,11 +49,11 @@ function ensureCallUI() {
   document.head.appendChild(st);
   const mc = document.querySelector('#modal-call .modal-content');
   if (mc) mc.innerHTML = `
-    <div class="call-info"><span id="callTimer">00:00</span><span id="callCost">◈ 0.00</span></div>
+    <div class="call-info"><span id="callTimer">00:00</span><span id="chatState" class="chat-state">💬 Chat: conectando…</span><span id="callCost">◈ 0.00</span></div>
     <div class="video-wrap">
       <video id="remoteVideo" autoplay playsinline></video>
       <video id="localVideo" autoplay playsinline muted></video>
-      <div id="callStatusMsg" class="dim">Conectando…</div>
+      <div id="callStatusMsg" class="dim">🎥 Conectando video…</div>
     </div>
     <div class="call-controls">
       <button id="btnMic" class="btn-small" onclick="toggleMic()">🎤 Silenciar</button>
@@ -69,6 +73,15 @@ function armAutoUnmute() {
   window.addEventListener('keydown', unmute, true);
 }
 function playRemoteNow() { const rv = document.getElementById('remoteVideo'); if (!rv) return; rv.muted = false; rv.play().catch(() => armAutoUnmute()); }
+
+// Vigila cambios de red (WiFi<->Datos) y reconecta el video SIN colgar
+function armNetworkWatch() {
+  if (netListenersOn) return; netListenersOn = true;
+  const onChange = () => { if (callRoom) { setStatus('🔄 Cambió la red: reconectando video…'); forceReconnect(); } };
+  try { if (navigator.connection) navigator.connection.addEventListener('change', onChange); } catch (e) {}
+  window.addEventListener('online', onChange);
+  window.addEventListener('offline', onChange);
+}
 
 async function showIncomingCall(row) {
   ensureCallUI();
@@ -94,19 +107,20 @@ async function startWebCall(room, opts = {}) { await beginCall(room, opts, true)
 async function joinWebCall(room, opts = {}) { await beginCall(room, opts, false); }
 
 async function beginCall(room, opts, initiator) {
-  ensureCallUI();
+  ensureCallUI(); armNetworkWatch();
   if (pc) teardownPC();
   clearHello(); clearAck(); clearOffer();
   callRoom = room; callRowId = opts.rowId || null; callRate = parseFloat(opts.rate) || 0;
   iAmClientFlag = !!opts.asClient; isInitiatorFlag = !!initiator;
   callCostTotal = 0; callSeconds = 0; callSetupDone = false; facingMode = 'user';
-  offerSent = false; pendingCandidates = []; reconnectAttempts = 0; currentPolicy = 'all';
-  peerPresent = false; gotAnswer = false; gotOffer = false;
+  offerSent = false; pendingCandidates = []; currentPolicy = 'all';
+  peerPresent = false; gotAnswer = false; gotOffer = false; lastReconnectAt = 0;
   micOn = true; camOn = true;
   const bm = document.getElementById('btnMic'); if (bm) { bm.textContent = '🎤 Silenciar'; bm.classList.remove('off'); }
   const bc = document.getElementById('btnCam'); if (bc) { bc.textContent = '📷 Encendida'; bc.classList.remove('off'); }
   document.getElementById('callTimer').textContent = '00:00';
   document.getElementById('callCost').textContent = iAmClientFlag && callRate > 0 ? '◈ 0.00' : (currentProfile.unlimited_tokens ? '∞ ADMIN' : '◈ 0.00');
+  setChatState('💬 Chat: conectando…', false);
   setStatus('📷 Solicitando cámara…');
   document.getElementById('callChatList').innerHTML = '';
   openModal('modal-call');
@@ -121,29 +135,16 @@ async function beginCall(room, opts, initiator) {
   callChannel.subscribe(async status => {
     if (status !== 'SUBSCRIBED' || callSetupDone) return;
     callSetupDone = true;
+    setChatState('💬 Chat conectado', true);
     createPC('all');
     startHelloLoop();
+    startWatchdog();
   });
 }
 
-// Latido: me anuncio cada 1s hasta que el otro me vea
-function startHelloLoop() {
-  clearHello();
-  send({ type: 'hello' });
-  helloTimer = setInterval(() => { if (!peerPresent) send({ type: 'hello' }); else clearHello(); }, 1000);
-}
-// La contestadora confirma en bucle hasta recibir la oferta
-function startAckLoop() {
-  clearAck();
-  send({ type: 'helloAck' });
-  ackTimer = setInterval(() => { if (!gotOffer) send({ type: 'helloAck' }); else clearAck(); }, 1000);
-}
-// El que llama re-envía la oferta hasta recibir respuesta
-function startOfferLoop() {
-  if (offerTimer) return;
-  createOffer();
-  offerTimer = setInterval(() => { if (!gotAnswer) createOffer(); else clearOffer(); }, 1500);
-}
+function startHelloLoop() { clearHello(); send({ type: 'hello' }); helloTimer = setInterval(() => { if (!peerPresent) send({ type: 'hello' }); else clearHello(); }, 1000); }
+function startAckLoop() { clearAck(); send({ type: 'helloAck' }); ackTimer = setInterval(() => { if (!gotOffer) send({ type: 'helloAck' }); else clearAck(); }, 1000); }
+function startOfferLoop() { if (offerTimer) return; createOffer(); offerTimer = setInterval(() => { if (!gotAnswer) createOffer(); else clearOffer(); }, 1500); }
 
 function teardownPC() { if (pc) { try { pc.close(); } catch (e) {} pc = null; } offerSent = false; pendingCandidates = []; }
 
@@ -156,30 +157,42 @@ function createPC(policy) {
   pc.onicecandidate = e => { if (e.candidate) send({ type: 'ice', candidate: e.candidate }); };
   pc.oniceconnectionstatechange = () => {
     const s = pc.iceConnectionState;
-    if (s === 'checking') setStatus('🔌 Conectando medios…');
-    if (s === 'disconnected') { try { pc.restartIce(); } catch (e) {} setStatus('🟡 Estabilizando…'); setTimeout(() => { if (pc && pc.iceConnectionState === 'disconnected') scheduleReconnect(); }, 4000); }
-    if (s === 'failed') scheduleReconnect();
+    if (s === 'checking') setStatus('🎥 Conectando video…');
+    if (s === 'disconnected') { try { pc.restartIce(); } catch (e) {} setStatus('🟡 Video: estabilizando…'); }
+    if (s === 'failed') queueReconnect(600);
   };
   pc.onconnectionstatechange = () => {
     const st = pc.connectionState;
-    if (st === 'connected') { reconnectAttempts = 0; setStatus('🟢 Conectada'); playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); }
-    else if (st === 'failed') scheduleReconnect();
+    if (st === 'connected') { setStatus('🟢 Video conectado'); playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); }
+    else if (st === 'failed') queueReconnect(600);
     else if (st === 'closed' && callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); }
   };
 }
 
-function scheduleReconnect() {
+// RECONEXIÓN SIN COLGAR: recrea el peer y renegocia, mantiene reloj y chat
+function forceReconnect() {
   if (!callRoom) return;
-  reconnectAttempts++;
-  const policy = LADDER[reconnectAttempts % LADDER.length];
-  setStatus('🟡 Reintentando (' + reconnectAttempts + ') · ruta ' + (policy === 'relay' ? 'relay TCP/TLS' : 'directa') + '…');
-  const delay = Math.min(6000, 800 + reconnectAttempts * 400);
-  setTimeout(() => {
-    if (!callRoom) return;
-    gotAnswer = false; gotOffer = false; pendingCandidates = [];
-    createPC(policy);
-    if (isInitiatorFlag) { startHelloLoop(); } else { startHelloLoop(); }
-  }, delay);
+  gotAnswer = false; gotOffer = false; pendingCandidates = [];
+  createPC(currentPolicy);
+  startHelloLoop();
+  if (isInitiatorFlag) setTimeout(() => { if (peerPresent && !gotAnswer) startOfferLoop(); }, 800);
+}
+function queueReconnect(delay) {
+  const now = Date.now();
+  if (now - lastReconnectAt < 1500) return;
+  lastReconnectAt = now;
+  setStatus('🟡 Video: reintentando…');
+  setTimeout(() => { if (callRoom) forceReconnect(); }, delay || 800);
+}
+// Watchdog: si no hay video, sigue intentando para siempre (máx cada 5s)
+function startWatchdog() {
+  if (watchdog) return;
+  watchdog = setInterval(() => {
+    if (callRoom && pc && pc.connectionState !== 'connected') {
+      const now = Date.now();
+      if (now - lastReconnectAt > 5000) { lastReconnectAt = now; setStatus('🟡 Video: reintentando…'); forceReconnect(); }
+    }
+  }, 5000);
 }
 
 function send(msg) { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { ...msg, from: currentUser.id } }); }
@@ -195,15 +208,11 @@ async function handleSignal(p) {
   if (p.type === 'hello') {
     peerPresent = true; clearHello();
     if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') createPC(currentPolicy);
-    if (!isInitiatorFlag) { setStatus('🤝 Contestó: conectando medios…'); if (!gotOffer) startAckLoop(); }
+    if (!isInitiatorFlag) { if (!gotOffer) startAckLoop(); }
     if (isInitiatorFlag) startOfferLoop();
     return;
   }
-  if (p.type === 'helloAck') {
-    peerPresent = true; clearHello();
-    if (isInitiatorFlag) { setStatus('🤝 Contestó: conectando medios…'); startOfferLoop(); }
-    return;
-  }
+  if (p.type === 'helloAck') { peerPresent = true; clearHello(); if (isInitiatorFlag) startOfferLoop(); return; }
   if (!pc) return;
   if (p.type === 'description') {
     try {
@@ -289,10 +298,11 @@ async function endWebCall() {
 }
 function cleanupCall() {
   if (callClock) { clearInterval(callClock); callClock = null; }
+  if (watchdog) { clearInterval(watchdog); watchdog = null; }
   clearHello(); clearAck(); clearOffer();
   teardownPC();
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   if (callChannel) { try { db.removeChannel(callChannel); } catch (e) {} callChannel = null; }
-  callRoom = null; callRowId = null; callSetupDone = false; reconnectAttempts = 0;
+  callRoom = null; callRowId = null; callSetupDone = false;
   closeModal('modal-call');
 }

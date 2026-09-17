@@ -3,16 +3,24 @@ let currentUser = null, currentProfile = null, roleDetails = null, myLocation = 
 let cart = { restId: null, items: [] };
 let liveChannel = null, sharing = false, shareTimer = null;
 const loadedScripts = {};
+window._modulesConfig = {};
 
 const LEVEL_META = {
-  1: { ico: '🥉', name: 'Bronce', rate: 0.2 },
-  2: { ico: '🥈', name: 'Plata', rate: 0.7 },
-  3: { ico: '🥇', name: 'Oro', rate: 1.2 },
-  4: { ico: '💠', name: 'Platino', rate: 2.0 },
+  1: { ico: '🥉', name: 'Bronce', rate: 0.2 }, 2: { ico: '🥈', name: 'Plata', rate: 0.7 },
+  3: { ico: '🥇', name: 'Oro', rate: 1.2 }, 4: { ico: '💠', name: 'Platino', rate: 2.0 },
   5: { ico: '💎', name: 'Diamante', rate: 3.0 }
 };
 function levelInfo(n) { return LEVEL_META[parseInt(n)] || LEVEL_META[1]; }
 function levelBadge(n) { const lv = Math.min(5, Math.max(1, parseInt(n) || 1)); const m = LEVEL_META[lv]; return `<span class="lvl lvl-${lv}"><span class="lvl-ico">${m.ico}</span>${m.name}</span>`; }
+
+// Apartados configurables por el admin
+const MODULE_DEFS = [
+  { id: 'map', n: 'Mapa Social' }, { id: 'radar', n: 'Radar Nocturno' }, { id: 'events', n: 'Eventos' },
+  { id: 'restaurants', n: 'Restaurantes' }, { id: 'reservations', n: 'Reservas' }, { id: 'orders', n: 'Pedidos' },
+  { id: 'marketplace', n: 'Marketplace' }, { id: 'girls', n: 'Videollamada con chicas' },
+  { id: 'remote', n: 'Trabajo' }, { id: 'delivery', n: 'Zona Domiciliario' }
+];
+const MODULE_ICONS = { map: '📍', radar: '🌙', events: '🎪', restaurants: '🍽️', reservations: '📅', orders: '📦', marketplace: '🛒', girls: '💃', remote: '💼', delivery: '🛵', chat: '💬', tokens: '◈', admin: '🛡️', kyc: '🪪' };
 
 const TIER_CSS = `
  .lvl{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-weight:800;font-size:.78rem;border:1px solid;vertical-align:middle}
@@ -43,8 +51,10 @@ const TIER_CSS = `
  .tier-5 .pf-hero::after{content:'👑';position:absolute;top:-14px;left:52px;font-size:1.5rem;animation:crownFloat 2.5s ease-in-out infinite}
  @keyframes heroPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
  @keyframes crownFloat{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-5px) rotate(6deg)}}
- .tier-5 .pf-gallery img{border-color:rgba(255,45,149,.5)}
- .tier-4 .pf-gallery img{border-color:rgba(0,217,255,.4)}`;
+ .app-header{position:relative}
+ .panic-top{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;border:1px solid #ff3b6b;background:rgba(255,59,107,.15);color:#ff3b6b;font-size:1rem;cursor:pointer;z-index:5}
+ .mod-locked{opacity:.65}
+ .mod-lock{display:block;font-size:.68rem;color:var(--warning);margin-top:4px;font-weight:700}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initPWA();
@@ -70,29 +80,15 @@ function initPWA() {
   window.addEventListener('pointerdown', unlock);
 }
 
-// ===== PRESENCIA: online solo con la app/página abierta =====
-function setWorkerOnlineDB(on) {
-  if (!currentUser) return Promise.resolve();
-  if (currentProfile) currentProfile.is_online = on;
-  return db.from('profiles').update({ is_online: on }).eq('id', currentUser.id);
-}
+function setWorkerOnlineDB(on) { if (!currentUser) return Promise.resolve(); if (currentProfile) currentProfile.is_online = on; return db.from('profiles').update({ is_online: on }).eq('id', currentUser.id); }
 function beaconOffline() {
   const t = window._fendyxToken; if (!t || !currentUser) return;
-  try {
-    fetch(SUPABASE_URL + '/rest/v1/profiles?id=eq.' + currentUser.id, {
-      method: 'PATCH', keepalive: true,
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ is_online: false })
-    });
-  } catch (e) {}
+  try { fetch(SUPABASE_URL + '/rest/v1/profiles?id=eq.' + currentUser.id, { method: 'PATCH', keepalive: true, headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, body: JSON.stringify({ is_online: false }) }); } catch (e) {}
 }
 function armPresence() {
   const intent = () => localStorage.getItem('fendyx_online_intent') === '1';
   if (intent() && !document.hidden) setWorkerOnlineDB(true);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) setWorkerOnlineDB(false);
-    else if (intent()) setWorkerOnlineDB(true);
-  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setWorkerOnlineDB(false); else if (intent()) setWorkerOnlineDB(true); });
   window.addEventListener('pagehide', beaconOffline);
   window.addEventListener('beforeunload', beaconOffline);
 }
@@ -136,6 +132,7 @@ async function ensureRoleDetails() {
 async function loadBranding() {
   const { data } = await db.from('app_branding').select('*').eq('id', 1).single();
   if (!data) return;
+  window._modulesConfig = data.modules_config || {};
   const setLogo = (i, f) => { const img = document.getElementById(i), fl = document.getElementById(f); if (!img || !fl) return; if (data.logo_url) { img.src = data.logo_url; img.style.display = 'inline-block'; fl.style.display = 'none'; } else { img.style.display = 'none'; fl.style.display = 'block'; } };
   setLogo('authLogo', 'authLogoFallback'); setLogo('headerLogo', 'headerLogoFallback'); setLogo('adminLogoPreview', 'adminLogoFallback');
   const n = data.app_name || 'FENDYX';
@@ -152,7 +149,6 @@ function injectDynamicUI() {
     body.has-banner .app-main{padding-top:130px}
     .kyc-img{width:120px;height:85px;object-fit:cover;border-radius:10px;border:1px solid var(--border-strong);margin:4px;cursor:pointer}
     .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}
-    .panic-fab{position:fixed;right:20px;bottom:170px;z-index:160;width:56px;height:56px;border-radius:50%;border:2px solid #ff3b6b;background:rgba(255,59,107,.18);color:#ff3b6b;font-size:1.4rem;cursor:pointer;backdrop-filter:blur(8px);animation:pulse 2.5s infinite}
     .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
     .incoming-call b{display:block}`;
   document.head.appendChild(st);
@@ -160,10 +156,16 @@ function injectDynamicUI() {
   banner.id = 'activationBanner'; banner.className = 'activation-banner hidden';
   banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3). <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
   document.querySelector('.app-header').after(banner);
-  const panic = document.createElement('button');
-  panic.id = 'panicBtn'; panic.className = 'panic-fab'; panic.textContent = '🆘';
-  panic.onclick = () => sendPanic('general');
-  document.body.appendChild(panic);
+  // SOS centrado en la barra superior, con confirmación
+  const header = document.querySelector('.app-header');
+  if (header && !document.getElementById('panicTop')) {
+    const b = document.createElement('button'); b.id = 'panicTop'; b.className = 'panic-top'; b.textContent = '🆘'; b.title = 'Alerta de pánico';
+    b.onclick = () => { if (confirm('¿Enviar ALERTA DE PÁNICO al administrador con tu ubicación actual?')) sendPanic('general'); };
+    header.appendChild(b);
+  }
+  // Avatar superior = Mi Perfil
+  const av = document.getElementById('userAvatar');
+  if (av) av.onclick = () => showSection('profile');
   if (!document.getElementById('incomingCall')) { const inc = document.createElement('div'); inc.id = 'incomingCall'; inc.className = 'incoming-call hidden'; document.body.appendChild(inc); }
   const girls = document.createElement('section');
   girls.id = 'section-girls'; girls.className = 'app-section';
@@ -197,23 +199,28 @@ function injectDynamicUI() {
     p3.innerHTML = `<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>`;
     document.getElementById('section-admin').appendChild(p3);
   }
+  if (tabs && !tabs.querySelector('[data-modules-tab]')) {
+    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`);
+    const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel';
+    p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado de la app.</p><div id="modulesConfigList" class="list-compact"></div>`;
+    document.getElementById('section-admin').appendChild(p4);
+  }
 }
 
 async function sendPanic(context, callId) {
   const pos = await getPos();
   await db.from('panic_alerts').insert({ user_id: currentUser.id, context: context || 'general', call_id: callId || null, latitude: pos?.lat || null, longitude: pos?.lng || null });
   navigator.vibrate?.([400, 150, 400]);
-  showToast('🆘 Alerta enviada al admin');
+  showToast('🆘 Alerta enviada al administrador');
 }
-async function reportUser(targetId, reason) {
-  await db.from('reports').insert({ reporter_id: currentUser.id, target_user_id: targetId, type: 'user', detail: reason });
-  showToast('🚩 Reporte enviado');
-}
+async function reportUser(targetId, reason) { await db.from('reports').insert({ reporter_id: currentUser.id, target_user_id: targetId, type: 'user', detail: reason }); showToast('🚩 Reporte enviado'); }
 function requireActive() {
   if (currentProfile.role === 'admin' || currentProfile.unlimited_tokens) return true;
   if (!currentProfile.is_active) { showToast('⚠️ Cuenta inactiva: solicita recarga (mín 3)'); showSection('tokens'); return false; }
   return true;
 }
+function showLocked(name) { showToast('🔒 ' + name + ' estará disponible próximamente.'); }
+
 function updateHeader() {
   if (!currentProfile) return;
   const t = document.getElementById('userTokens');
@@ -221,40 +228,46 @@ function updateHeader() {
   const av = document.getElementById('userAvatar'); if (av) av.textContent = (currentProfile.full_name || 'U').charAt(0).toUpperCase();
   const w = document.getElementById('welcomeName'); if (w) w.textContent = (currentProfile.full_name || 'Usuario').split(' ')[0];
   const wr = document.getElementById('welcomeRole'); if (wr) wr.textContent = 'Rol: ' + (ROLE_LABELS[currentProfile.role] || 'Usuario');
-  document.querySelector('.admin-only')?.classList.toggle('hidden', currentProfile.role !== 'admin');
   document.getElementById('btnJoinKyc')?.classList.toggle('hidden', !!currentProfile.is_verified);
   const banner = document.getElementById('activationBanner');
   const inactive = !currentProfile.is_active && currentProfile.role !== 'admin' && !currentProfile.unlimited_tokens;
   if (banner) banner.classList.toggle('hidden', !inactive);
   document.body.classList.toggle('has-banner', inactive);
 }
-function toggleUserMenu() { document.getElementById('userMenu').classList.toggle('hidden'); }
-document.addEventListener('click', e => { if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden'); });
 async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; if (currentProfile?.role === 'remote_worker') { localStorage.setItem('fendyx_online_intent', '0'); beaconOffline(); } localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
 function loadModules() {
-  const mods = [
-    { id: 'map', icon: '📍', n: 'Mapa Social' }, { id: 'radar', icon: '🌙', n: 'Radar Nocturno' },
-    { id: 'events', icon: '🎪', n: 'Eventos' }, { id: 'restaurants', icon: '🍽️', n: 'Restaurantes' },
-    { id: 'reservations', icon: '📅', n: 'Reservas' }, { id: 'orders', icon: '📦', n: 'Pedidos' },
-    { id: 'marketplace', icon: '🛒', n: 'Marketplace' }, { id: 'chat', icon: '💬', n: 'Chat' },
-    { id: 'tokens', icon: '◈', n: 'Tokens' }, { id: 'profile', icon: '👤', n: 'Mi Perfil' },
-    { id: 'profileedit', icon: '✏️', n: 'Perfil Pro' }
-  ];
-  if (currentProfile.role === 'remote_worker') {
-    if (currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', icon: '🪪', n: 'Mi Verificación' });
-    mods.splice(6, 0, { id: 'remote', icon: '💼', n: 'Trabajo' });
-  } else {
-    mods.splice(2, 0, { id: 'girls', icon: '💃', n: 'Videollamada con chicas' });
+  const cfg = window._modulesConfig || {};
+  const role = currentProfile.role;
+  let mods = [];
+  for (const d of MODULE_DEFS) {
+    if (d.id === 'girls' && role === 'remote_worker') continue;
+    if (d.id === 'remote' && role !== 'remote_worker') continue;
+    if (d.id === 'delivery' && role !== 'delivery') continue;
+    const state = cfg[d.id] || 'on';
+    if (state === 'hidden' && role !== 'admin') continue;
+    mods.push({ id: d.id, n: d.n, state });
   }
-  if (currentProfile.role === 'delivery') mods.push({ id: 'delivery', icon: '🛵', n: 'Zona Domiciliario' });
-  if (currentProfile.role === 'admin') mods.unshift({ id: 'admin', icon: '🛡️', n: 'Panel Admin' });
-  document.getElementById('modulesGrid').innerHTML = mods.map(m => `<div class="module-card" onclick="showSection('${m.id}')"><span class="icon">${m.icon}</span><h3>${m.n}</h3></div>`).join('');
+  mods.push({ id: 'chat', n: 'Chat', state: 'on' }, { id: 'tokens', n: 'Tokens', state: 'on' });
+  if (role === 'admin') mods.unshift({ id: 'admin', n: 'Panel Admin', state: 'on' });
+  if (role === 'remote_worker' && currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', n: 'Mi Verificación', state: 'on' });
+  document.getElementById('modulesGrid').innerHTML = mods.map(m =>
+    `<div class="module-card ${m.state === 'off' ? 'mod-locked' : ''}" onclick="${m.state === 'off' ? `showLocked('${m.n}')` : `showSection('${m.id}')`}">
+      <span class="icon">${MODULE_ICONS[m.id] || '•'}</span><h3>${m.n}</h3>
+      ${m.state === 'off' ? '<span class="mod-lock">🔒 Próximamente</span>' : ''}
+      ${m.state === 'hidden' ? '<span class="mod-lock">🙈 Oculto</span>' : ''}
+    </div>`).join('');
 }
 const MODULE_FILES = { map: 'map.js', radar: 'radar.js', events: 'radar.js', restaurants: 'restaurants.js', reservations: 'restaurants.js', orders: 'orders.js', delivery: 'delivery.js', remote: 'remote.js', girls: 'remote.js', kyc: 'remote.js', marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js', calls: 'calls.js' };
 const LOADERS = { map: () => { initMap(); autoLocate(); loadMapUsers(); }, radar: () => loadRadar(), events: () => loadEvents(), restaurants: () => loadRestaurants(), reservations: () => loadReservations(), orders: () => loadOrders(), delivery: () => loadDeliveryHub(), remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(), marketplace: () => loadMarketplace(), chat: () => loadConversations(), tokens: () => loadTransactions(), profile: () => loadProfileSection(), profileedit: () => fillProfilePro(), admin: () => loadAdmin() };
 function loadScript(file) { if (loadedScripts[file]) return loadedScripts[file]; loadedScripts[file] = new Promise(res => { const s = document.createElement('script'); s.src = 'js/' + file; s.onload = res; s.onerror = res; document.body.appendChild(s); }); return loadedScripts[file]; }
 async function showSection(name) {
+  const def = MODULE_DEFS.find(d => d.id === name);
+  if (def && currentProfile?.role !== 'admin') {
+    const st = (window._modulesConfig || {})[name] || 'on';
+    if (st === 'off') { showLocked(def.n); return; }
+    if (st === 'hidden') { showSection('dashboard'); return; }
+  }
   document.querySelectorAll('.app-section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + name)?.classList.add('active');
   document.getElementById('userMenu')?.classList.add('hidden');
@@ -332,6 +345,6 @@ function startRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { if (typeof loadOrders === 'function' && document.getElementById('section-orders')?.classList.contains('active')) loadOrders(); if (typeof loadDeliveryHub === 'function' && document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'radar_presences' }, () => { if (typeof loadRadarUsers === 'function' && document.getElementById('section-radar')?.classList.contains('active')) loadRadarUsers(); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharge_requests' }, () => { if (currentProfile.role === 'admin' && typeof loadRechargeRequests === 'function' && document.getElementById('admin-recharges')?.classList.contains('active')) loadRechargeRequests(); })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_branding' }, () => loadBranding())
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_branding' }, () => loadBranding().then(() => { if (currentProfile) loadModules(); }))
     .subscribe();
 }

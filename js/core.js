@@ -24,10 +24,19 @@ const TIER_CSS = `
  .lvl-5{background:linear-gradient(100deg,rgba(255,45,149,.25),rgba(0,217,255,.25),rgba(255,45,149,.25));background-size:200%;color:#fff;border-color:transparent;animation:lvlShine 2.5s linear infinite;box-shadow:0 0 14px rgba(255,45,149,.45)}
  @keyframes lvlGlow{0%,100%{box-shadow:0 0 4px currentColor}50%{box-shadow:0 0 12px currentColor}}
  @keyframes lvlShine{0%{background-position:0%}100%{background-position:200%}}
- .girl-card.tier-3{border-color:rgba(255,215,0,.35)}
- .girl-card.tier-4{border-color:rgba(0,217,255,.45);box-shadow:0 0 14px rgba(0,217,255,.2)}
- .girl-card.tier-5{border-color:rgba(255,45,149,.55);animation:cardPulse 3s infinite}
- @keyframes cardPulse{0%,100%{box-shadow:0 0 10px rgba(255,45,149,.2)}50%{box-shadow:0 0 24px rgba(255,45,149,.5)}}
+ .girl-card{position:relative;overflow:hidden}
+ .girl-card.tier-3{border-color:rgba(255,215,0,.5);animation:glowGold 2.5s infinite}
+ .girl-card.tier-3::after{content:'✨';position:absolute;top:8px;right:10px;font-size:1.1rem;animation:sparkFloat 2.2s infinite}
+ .girl-card.tier-4{border-color:rgba(0,217,255,.6);animation:glowCyan 2s infinite}
+ .girl-card.tier-4::after{content:'🔥';position:absolute;top:8px;right:10px;font-size:1.2rem;animation:flameFlick 1.2s infinite}
+ .girl-card.tier-5{border-color:rgba(255,45,149,.7);animation:glowPink 1.6s infinite}
+ .girl-card.tier-5::after{content:'👑';position:absolute;top:6px;right:10px;font-size:1.5rem;animation:crownFloat 2s infinite}
+ .girl-card.tier-5::before{content:'✨';position:absolute;bottom:8px;left:10px;font-size:1.1rem;animation:sparkFloat 1.8s infinite}
+ @keyframes glowGold{0%,100%{box-shadow:0 0 8px rgba(255,215,0,.3)}50%{box-shadow:0 0 20px rgba(255,215,0,.6)}}
+ @keyframes glowCyan{0%,100%{box-shadow:0 0 8px rgba(0,217,255,.3)}50%{box-shadow:0 0 22px rgba(0,217,255,.65)}}
+ @keyframes glowPink{0%,100%{box-shadow:0 0 10px rgba(255,45,149,.35)}50%{box-shadow:0 0 26px rgba(255,45,149,.75)}}
+ @keyframes sparkFloat{0%,100%{transform:translateY(0) scale(1);opacity:.7}50%{transform:translateY(-6px) scale(1.2);opacity:1}}
+ @keyframes flameFlick{0%,100%{transform:scale(1) rotate(-3deg)}50%{transform:scale(1.25) rotate(4deg)}}
  .tier-4 .pf-hero img,.tier-4 .pf-hero-letter{box-shadow:0 0 16px rgba(0,217,255,.55)}
  .tier-5 .pf-hero img,.tier-5 .pf-hero-letter{box-shadow:0 0 24px rgba(255,45,149,.65);animation:heroPulse 2.2s infinite}
  .tier-5 .pf-hero{position:relative}
@@ -42,8 +51,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadBranding();
   const isApp = !!document.getElementById('section-dashboard');
   const { data: { session } } = await db.auth.getSession();
-  if (isApp) { if (!session) { location.replace('index.html'); return; } currentUser = session.user; await enterApp(); }
-  else if (session) { location.replace('app.html'); }
+  if (isApp) {
+    if (!session) { location.replace('index.html'); return; }
+    currentUser = session.user;
+    window._fendyxToken = session.access_token;
+    await enterApp();
+  } else if (session) { location.replace('app.html'); }
 });
 
 function initPWA() {
@@ -53,6 +66,35 @@ function initPWA() {
     const a = document.createElement('link'); a.rel = 'apple-touch-icon'; a.href = 'icons/icon.svg'; document.head.appendChild(a);
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  const unlock = () => { try { window._fendyxAudio = window._fendyxAudio || new (window.AudioContext || window.webkitAudioContext)(); window._fendyxAudio.resume(); } catch (e) {} window.removeEventListener('pointerdown', unlock); };
+  window.addEventListener('pointerdown', unlock);
+}
+
+// ===== PRESENCIA: online solo con la app/página abierta =====
+function setWorkerOnlineDB(on) {
+  if (!currentUser) return Promise.resolve();
+  if (currentProfile) currentProfile.is_online = on;
+  return db.from('profiles').update({ is_online: on }).eq('id', currentUser.id);
+}
+function beaconOffline() {
+  const t = window._fendyxToken; if (!t || !currentUser) return;
+  try {
+    fetch(SUPABASE_URL + '/rest/v1/profiles?id=eq.' + currentUser.id, {
+      method: 'PATCH', keepalive: true,
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ is_online: false })
+    });
+  } catch (e) {}
+}
+function armPresence() {
+  const intent = () => localStorage.getItem('fendyx_online_intent') === '1';
+  if (intent() && !document.hidden) setWorkerOnlineDB(true);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) setWorkerOnlineDB(false);
+    else if (intent()) setWorkerOnlineDB(true);
+  });
+  window.addEventListener('pagehide', beaconOffline);
+  window.addEventListener('beforeunload', beaconOffline);
 }
 
 async function enterApp() {
@@ -63,7 +105,7 @@ async function enterApp() {
     if (currentProfile.is_banned) { localStorage.setItem('fendyx_ban_reason', currentProfile.ban_reason || 'Sin razón'); await db.auth.signOut(); location.replace('index.html?banned=1'); return; }
     injectDynamicUI();
     await ensureRoleDetails();
-    if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status === 'approved') loadScript('calls.js');
+    if (currentProfile.role === 'remote_worker') { armPresence(); if (currentProfile.kyc_status === 'approved') loadScript('calls.js'); }
     updateHeader(); loadModules();
     const last = localStorage.getItem('fendyx_last_section');
     const valid = last && LOADERS[last] && ((last !== 'delivery' || currentProfile.role === 'delivery') && (last !== 'girls' || currentProfile.role !== 'remote_worker') && (last !== 'remote' || currentProfile.role === 'remote_worker') && (last !== 'kyc' || currentProfile.role === 'remote_worker') && (last !== 'admin' || currentProfile.role === 'admin'));
@@ -188,9 +230,8 @@ function updateHeader() {
 }
 function toggleUserMenu() { document.getElementById('userMenu').classList.toggle('hidden'); }
 document.addEventListener('click', e => { if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden'); });
-async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
+async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; if (currentProfile?.role === 'remote_worker') { localStorage.setItem('fendyx_online_intent', '0'); beaconOffline(); } localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
-// SIN DUPLICADOS: Trabajo Remoto SOLO para la trabajadora; Videollamada con chicas para el resto
 function loadModules() {
   const mods = [
     { id: 'map', icon: '📍', n: 'Mapa Social' }, { id: 'radar', icon: '🌙', n: 'Radar Nocturno' },
@@ -202,7 +243,7 @@ function loadModules() {
   ];
   if (currentProfile.role === 'remote_worker') {
     if (currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', icon: '🪪', n: 'Mi Verificación' });
-    mods.splice(6, 0, { id: 'remote', icon: '💼', n: 'Trabajo Remoto' });
+    mods.splice(6, 0, { id: 'remote', icon: '💼', n: 'Trabajo' });
   } else {
     mods.splice(2, 0, { id: 'girls', icon: '💃', n: 'Videollamada con chicas' });
   }
@@ -286,7 +327,7 @@ function startRealtime() {
       if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharge_requests' }, p => { if (p.new.user_id === currentUser.id) { showToast(p.new.status === 'approved' ? '✅ Recarga aprobada' : p.new.status === 'rejected' ? '❌ Recarga rechazada' : ''); updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); } })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, async p => { if (p.new.worker_id === currentUser.id && p.new.status === 'active') { navigator.vibrate?.([300, 120, 300]); await loadScript('calls.js'); if (typeof showIncomingCall === 'function') showIncomingCall(p.new); } })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, async p => { if (p.new.worker_id === currentUser.id && p.new.status === 'active') { await loadScript('calls.js'); if (typeof showIncomingCall === 'function') showIncomingCall(p.new); } })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, async p => { if (p.new.status === 'ended' && (p.new.worker_id === currentUser.id || p.new.client_id === currentUser.id)) { await loadScript('calls.js'); if (typeof remoteHungUp === 'function') remoteHungUp(p.new); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { if (typeof loadOrders === 'function' && document.getElementById('section-orders')?.classList.contains('active')) loadOrders(); if (typeof loadDeliveryHub === 'function' && document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'radar_presences' }, () => { if (typeof loadRadarUsers === 'function' && document.getElementById('section-radar')?.classList.contains('active')) loadRadarUsers(); })

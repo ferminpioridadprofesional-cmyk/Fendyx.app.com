@@ -5,26 +5,20 @@ let liveChannel = null, sharing = false, shareTimer = null;
 const loadedScripts = {};
 window._modulesConfig = {};
 
-const LEVEL_META = {
-  1: { ico: '🥉', name: 'Bronce', rate: 0.2 }, 2: { ico: '🥈', name: 'Plata', rate: 0.7 },
-  3: { ico: '🥇', name: 'Oro', rate: 1.2 }, 4: { ico: '💠', name: 'Platino', rate: 2.0 },
-  5: { ico: '💎', name: 'Diamante', rate: 3.0 }
-};
-function levelInfo(n) { return LEVEL_META[parseInt(n)] || LEVEL_META[1]; }
-function levelBadge(n) { const lv = Math.min(5, Math.max(1, parseInt(n) || 1)); const m = LEVEL_META[lv]; return `<span class="lvl lvl-${lv}"><span class="lvl-ico">${m.ico}</span>${m.name}</span>`; }
+const LEVEL_META = { 1:{ico:'🥉',name:'Bronce',rate:0.2},2:{ico:'🥈',name:'Plata',rate:0.7},3:{ico:'🥇',name:'Oro',rate:1.2},4:{ico:'💠',name:'Platino',rate:2},5:{ico:'💎',name:'Diamante',rate:3} };
+function levelInfo(n){return LEVEL_META[parseInt(n)]||LEVEL_META[1];}
+function levelBadge(n){const lv=Math.min(5,Math.max(1,parseInt(n)||1));const m=LEVEL_META[lv];return `<span class="lvl lvl-${lv}"><span class="lvl-ico">${m.ico}</span>${m.name}</span>`;}
 
-// Apartados configurables por el admin
 const MODULE_DEFS = [
-  { id: 'map', n: 'Mapa Social' }, { id: 'radar', n: 'Radar Nocturno' }, { id: 'events', n: 'Eventos' },
-  { id: 'restaurants', n: 'Restaurantes' }, { id: 'reservations', n: 'Reservas' }, { id: 'orders', n: 'Pedidos' },
-  { id: 'marketplace', n: 'Marketplace' }, { id: 'girls', n: 'Videollamada con chicas' },
-  { id: 'remote', n: 'Trabajo' }, { id: 'delivery', n: 'Zona Domiciliario' }
+  {id:'map',n:'Mapa Social'},{id:'radar',n:'Radar Nocturno'},{id:'events',n:'Eventos'},
+  {id:'restaurants',n:'Restaurantes'},{id:'reservations',n:'Reservas'},{id:'orders',n:'Pedidos'},
+  {id:'marketplace',n:'Marketplace'},{id:'girls',n:'Videollamada con chicas'},{id:'remote',n:'Trabajo'},
+  {id:'delivery',n:'Zona Domiciliario'},{id:'chat',n:'Chat'}
 ];
-const MODULE_ICONS = { map: '📍', radar: '🌙', events: '🎪', restaurants: '🍽️', reservations: '📅', orders: '📦', marketplace: '🛒', girls: '💃', remote: '💼', delivery: '🛵', chat: '💬', tokens: '◈', admin: '🛡️', kyc: '🪪' };
+const MODULE_ICONS = {map:'📍',radar:'🌙',events:'🎪',restaurants:'🍽️',reservations:'📅',orders:'📦',marketplace:'🛒',girls:'💃',remote:'💼',delivery:'🛵',chat:'💬',tokens:'◈',admin:'🛡️',kyc:'🪪'};
 
 const TIER_CSS = `
  .lvl{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-weight:800;font-size:.78rem;border:1px solid;vertical-align:middle}
- .lvl-ico{font-size:1rem}
  .lvl-1{background:rgba(205,127,50,.15);color:#e0a06a;border-color:#cd7f32}
  .lvl-2{background:rgba(192,192,192,.15);color:#dcdcdc;border-color:#c0c0c0}
  .lvl-3{background:rgba(255,215,0,.15);color:#ffd75e;border-color:#ffd700;animation:lvlGlow 2.5s infinite}
@@ -45,106 +39,61 @@ const TIER_CSS = `
  @keyframes glowPink{0%,100%{box-shadow:0 0 10px rgba(255,45,149,.35)}50%{box-shadow:0 0 26px rgba(255,45,149,.75)}}
  @keyframes sparkFloat{0%,100%{transform:translateY(0) scale(1);opacity:.7}50%{transform:translateY(-6px) scale(1.2);opacity:1}}
  @keyframes flameFlick{0%,100%{transform:scale(1) rotate(-3deg)}50%{transform:scale(1.25) rotate(4deg)}}
- .tier-4 .pf-hero img,.tier-4 .pf-hero-letter{box-shadow:0 0 16px rgba(0,217,255,.55)}
- .tier-5 .pf-hero img,.tier-5 .pf-hero-letter{box-shadow:0 0 24px rgba(255,45,149,.65);animation:heroPulse 2.2s infinite}
- .tier-5 .pf-hero{position:relative}
- .tier-5 .pf-hero::after{content:'👑';position:absolute;top:-14px;left:52px;font-size:1.5rem;animation:crownFloat 2.5s ease-in-out infinite}
- @keyframes heroPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
  @keyframes crownFloat{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-5px) rotate(6deg)}}
  .app-header{position:relative}
  .panic-top{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;border:1px solid #ff3b6b;background:rgba(255,59,107,.15);color:#ff3b6b;font-size:1rem;cursor:pointer;z-index:5}
  .mod-locked{opacity:.65}
- .mod-lock{display:block;font-size:.68rem;color:var(--warning);margin-top:4px;font-weight:700}`;
+ .mod-lock{display:block;font-size:.68rem;color:var(--warning);margin-top:4px;font-weight:700}
+ .video-wrap{height:calc(100vh - 300px);min-height:300px}
+ #remoteVideo{object-fit:cover}
+ .lb-wrap{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:900;display:flex;align-items:center;justify-content:center}
+ .lb-wrap img{max-width:100%;max-height:88vh;object-fit:contain}
+ .lb-btn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.12);border:none;color:#fff;font-size:2rem;width:48px;height:48px;border-radius:50%;cursor:pointer}
+ .lb-prev{left:10px}.lb-next{right:10px}
+ .lb-close{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:1.4rem;width:42px;height:42px;border-radius:50%;cursor:pointer}
+ .lb-dots{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+ .lb-dots span{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.4)}
+ .lb-dots span.on{background:#fff}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  initPWA();
-  await loadBranding();
+  initPWA(); await loadBranding();
   const isApp = !!document.getElementById('section-dashboard');
   const { data: { session } } = await db.auth.getSession();
-  if (isApp) {
-    if (!session) { location.replace('index.html'); return; }
-    currentUser = session.user;
-    window._fendyxToken = session.access_token;
-    await enterApp();
-  } else if (session) { location.replace('app.html'); }
+  if (isApp) { if (!session) { location.replace('index.html'); return; } currentUser = session.user; window._fendyxToken = session.access_token; await enterApp(); }
+  else if (session) location.replace('app.html');
 });
-
-function initPWA() {
-  if (!document.querySelector('link[rel="manifest"]')) {
-    const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.json'; document.head.appendChild(l);
-    const m = document.createElement('meta'); m.name = 'theme-color'; m.content = '#00d9ff'; document.head.appendChild(m);
-    const a = document.createElement('link'); a.rel = 'apple-touch-icon'; a.href = 'icons/icon.svg'; document.head.appendChild(a);
-  }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  const unlock = () => { try { window._fendyxAudio = window._fendyxAudio || new (window.AudioContext || window.webkitAudioContext)(); window._fendyxAudio.resume(); } catch (e) {} window.removeEventListener('pointerdown', unlock); };
-  window.addEventListener('pointerdown', unlock);
+function initPWA(){
+  if(!document.querySelector('link[rel="manifest"]')){const l=document.createElement('link');l.rel='manifest';l.href='manifest.json';document.head.appendChild(l);const m=document.createElement('meta');m.name='theme-color';m.content='#00d9ff';document.head.appendChild(m);const a=document.createElement('link');a.rel='apple-touch-icon';a.href='icons/icon.svg';document.head.appendChild(a);}
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  const unlock=()=>{try{window._fendyxAudio=window._fendyxAudio||new (window.AudioContext||window.webkitAudioContext)();window._fendyxAudio.resume();}catch(e){}window.removeEventListener('pointerdown',unlock);};
+  window.addEventListener('pointerdown',unlock);
 }
+function setWorkerOnlineDB(on){if(!currentUser)return Promise.resolve();if(currentProfile)currentProfile.is_online=on;return db.from('profiles').update({is_online:on}).eq('id',currentUser.id);}
+function beaconOffline(){const t=window._fendyxToken;if(!t||!currentUser)return;try{fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+currentUser.id,{method:'PATCH',keepalive:true,headers:{'apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+t,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({is_online:false})});}catch(e){}}
+function armPresence(){const intent=()=>localStorage.getItem('fendyx_online_intent')==='1';if(intent()&&!document.hidden)setWorkerOnlineDB(true);document.addEventListener('visibilitychange',()=>{if(document.hidden)setWorkerOnlineDB(false);else if(intent())setWorkerOnlineDB(true);});window.addEventListener('pagehide',beaconOffline);window.addEventListener('beforeunload',beaconOffline);}
 
-function setWorkerOnlineDB(on) { if (!currentUser) return Promise.resolve(); if (currentProfile) currentProfile.is_online = on; return db.from('profiles').update({ is_online: on }).eq('id', currentUser.id); }
-function beaconOffline() {
-  const t = window._fendyxToken; if (!t || !currentUser) return;
-  try { fetch(SUPABASE_URL + '/rest/v1/profiles?id=eq.' + currentUser.id, { method: 'PATCH', keepalive: true, headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, body: JSON.stringify({ is_online: false }) }); } catch (e) {}
-}
-function armPresence() {
-  const intent = () => localStorage.getItem('fendyx_online_intent') === '1';
-  if (intent() && !document.hidden) setWorkerOnlineDB(true);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) setWorkerOnlineDB(false); else if (intent()) setWorkerOnlineDB(true); });
-  window.addEventListener('pagehide', beaconOffline);
-  window.addEventListener('beforeunload', beaconOffline);
-}
-
-async function enterApp() {
-  try {
-    await loadProfile();
-    if (!currentProfile) await repairProfile();
-    if (!currentProfile) { await db.auth.signOut(); location.replace('index.html'); return; }
-    if (currentProfile.is_banned) { localStorage.setItem('fendyx_ban_reason', currentProfile.ban_reason || 'Sin razón'); await db.auth.signOut(); location.replace('index.html?banned=1'); return; }
-    injectDynamicUI();
-    await ensureRoleDetails();
-    if (currentProfile.role === 'remote_worker') { armPresence(); if (currentProfile.kyc_status === 'approved') loadScript('calls.js'); }
+async function enterApp(){
+  try{
+    await loadProfile(); if(!currentProfile)await repairProfile();
+    if(!currentProfile){await db.auth.signOut();location.replace('index.html');return;}
+    if(currentProfile.is_banned){localStorage.setItem('fendyx_ban_reason',currentProfile.ban_reason||'Sin razón');await db.auth.signOut();location.replace('index.html?banned=1');return;}
+    injectDynamicUI(); await ensureRoleDetails();
+    if(currentProfile.role==='remote_worker'){armPresence();if(currentProfile.kyc_status==='approved')loadScript('calls.js');}
     updateHeader(); loadModules();
-    const last = localStorage.getItem('fendyx_last_section');
-    const valid = last && LOADERS[last] && ((last !== 'delivery' || currentProfile.role === 'delivery') && (last !== 'girls' || currentProfile.role !== 'remote_worker') && (last !== 'remote' || currentProfile.role === 'remote_worker') && (last !== 'kyc' || currentProfile.role === 'remote_worker') && (last !== 'admin' || currentProfile.role === 'admin'));
-    showSection(valid ? last : 'dashboard');
-    startRealtime();
-  } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
+    const last=localStorage.getItem('fendyx_last_section');
+    const valid=last&&LOADERS[last]&&((last!=='delivery'||currentProfile.role==='delivery')&&(last!=='girls'||currentProfile.role!=='remote_worker')&&(last!=='remote'||currentProfile.role==='remote_worker')&&(last!=='kyc'||currentProfile.role==='remote_worker')&&(last!=='admin'||currentProfile.role==='admin'));
+    showSection(valid?last:'dashboard'); startRealtime();
+  }catch(e){console.error(e);showToast('⚠️ Error de carga: '+e.message);}
 }
-async function repairProfile() {
-  const { data } = await db.from('profiles').select('*').eq('id', currentUser.id).single();
-  if (data) { currentProfile = data; return; }
-  const meta = JSON.parse(localStorage.getItem('fendyx_pending_meta') || '{}');
-  const { data: created, error } = await db.from('profiles').insert({ id: currentUser.id, email: currentUser.email, full_name: meta.full_name || 'Usuario', role: meta.role || 'user', age: meta.age || null, gender: meta.gender || null, referral_code: (currentUser.id || '').replace(/-/g, '').slice(0, 8).toUpperCase(), tokens_balance: 0, is_active: false }).select().single();
-  if (!error) currentProfile = created;
-}
-async function loadProfile() {
-  const { data } = await db.from('profiles').select('*').eq('id', currentUser.id).single();
-  currentProfile = data;
-  const { data: rd } = await db.from('role_details').select('*').eq('user_id', currentUser.id).single();
-  roleDetails = rd;
-}
-async function ensureRoleDetails() {
-  if (roleDetails) return;
-  const meta = JSON.parse(localStorage.getItem('fendyx_pending_meta') || '{}');
-  const { data } = await db.from('role_details').insert({ user_id: currentUser.id, role_type: currentProfile.role, rif: meta.rif || null, business_name: meta.business_name || null, address: meta.address || null, license_number: meta.license || null, vehicle_plate: meta.plate || null, vehicle_type: meta.vehicle || null, specialty: meta.specialty || null, bio: meta.bio || null, rate_per_minute: currentProfile.role === 'remote_worker' ? 0.2 : null }).select().single();
-  roleDetails = data;
-  localStorage.removeItem('fendyx_pending_meta');
-}
-async function loadBranding() {
-  const { data } = await db.from('app_branding').select('*').eq('id', 1).single();
-  if (!data) return;
-  window._modulesConfig = data.modules_config || {};
-  const setLogo = (i, f) => { const img = document.getElementById(i), fl = document.getElementById(f); if (!img || !fl) return; if (data.logo_url) { img.src = data.logo_url; img.style.display = 'inline-block'; fl.style.display = 'none'; } else { img.style.display = 'none'; fl.style.display = 'block'; } };
-  setLogo('authLogo', 'authLogoFallback'); setLogo('headerLogo', 'headerLogoFallback'); setLogo('adminLogoPreview', 'adminLogoFallback');
-  const n = data.app_name || 'FENDYX';
-  ['authAppName', 'headerAppName'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = n; });
-  const an = document.getElementById('adminAppName'); if (an && !an.value) an.value = n;
-}
+async function repairProfile(){const{data}=await db.from('profiles').select('*').eq('id',currentUser.id).single();if(data){currentProfile=data;return;}const meta=JSON.parse(localStorage.getItem('fendyx_pending_meta')||'{}');const{data:c,error}=await db.from('profiles').insert({id:currentUser.id,email:currentUser.email,full_name:meta.full_name||'Usuario',role:meta.role||'user',age:meta.age||null,gender:meta.gender||null,referral_code:(currentUser.id||'').replace(/-/g,'').slice(0,8).toUpperCase(),tokens_balance:0,is_active:false}).select().single();if(!error)currentProfile=c;}
+async function loadProfile(){const{data}=await db.from('profiles').select('*').eq('id',currentUser.id).single();currentProfile=data;const{data:rd}=await db.from('role_details').select('*').eq('user_id',currentUser.id).single();roleDetails=rd;}
+async function ensureRoleDetails(){if(roleDetails)return;const meta=JSON.parse(localStorage.getItem('fendyx_pending_meta')||'{}');const{data}=await db.from('role_details').insert({user_id:currentUser.id,role_type:currentProfile.role,rif:meta.rif||null,business_name:meta.business_name||null,address:meta.address||null,license_number:meta.license||null,vehicle_plate:meta.plate||null,vehicle_type:meta.vehicle||null,specialty:meta.specialty||null,bio:meta.bio||null,rate_per_minute:currentProfile.role==='remote_worker'?0.2:null}).select().single();roleDetails=data;localStorage.removeItem('fendyx_pending_meta');}
+async function loadBranding(){const{data}=await db.from('app_branding').select('*').eq('id',1).single();if(!data)return;window._modulesConfig=data.modules_config||{};const setLogo=(i,f)=>{const img=document.getElementById(i),fl=document.getElementById(f);if(!img||!fl)return;if(data.logo_url){img.src=data.logo_url;img.style.display='inline-block';fl.style.display='none';}else{img.style.display='none';fl.style.display='block';}};setLogo('authLogo','authLogoFallback');setLogo('headerLogo','headerLogoFallback');setLogo('adminLogoPreview','adminLogoFallback');const n=data.app_name||'FENDYX';['authAppName','headerAppName'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=n;});const an=document.getElementById('adminAppName');if(an&&!an.value)an.value=n;}
 
-function injectDynamicUI() {
-  if (document.getElementById('fendyx-extra-style')) return;
-  const st = document.createElement('style');
-  st.id = 'fendyx-extra-style';
-  st.textContent = TIER_CSS + `
+function injectDynamicUI(){
+  if(document.getElementById('fendyx-extra-style'))return;
+  const st=document.createElement('style');st.id='fendyx-extra-style';
+  st.textContent=TIER_CSS+`
     .activation-banner{position:fixed;top:62px;left:0;right:0;z-index:115;background:linear-gradient(100deg,rgba(255,176,32,.96),rgba(255,59,107,.92));color:#04060c;padding:10px 16px;font-weight:700;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center}
     body.has-banner .app-main{padding-top:130px}
     .kyc-img{width:120px;height:85px;object-fit:cover;border-radius:10px;border:1px solid var(--border-strong);margin:4px;cursor:pointer}
@@ -152,199 +101,117 @@ function injectDynamicUI() {
     .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
     .incoming-call b{display:block}`;
   document.head.appendChild(st);
-  const banner = document.createElement('div');
-  banner.id = 'activationBanner'; banner.className = 'activation-banner hidden';
-  banner.innerHTML = `⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3). <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
+  const banner=document.createElement('div');banner.id='activationBanner';banner.className='activation-banner hidden';
+  banner.innerHTML=`⚠️ <b>Cuenta inactiva.</b> Solicita una recarga (mín 3). <button class="btn-small success" onclick="showSection('tokens')">Recargar</button>`;
   document.querySelector('.app-header').after(banner);
-  // SOS centrado en la barra superior, con confirmación
-  const header = document.querySelector('.app-header');
-  if (header && !document.getElementById('panicTop')) {
-    const b = document.createElement('button'); b.id = 'panicTop'; b.className = 'panic-top'; b.textContent = '🆘'; b.title = 'Alerta de pánico';
-    b.onclick = () => { if (confirm('¿Enviar ALERTA DE PÁNICO al administrador con tu ubicación actual?')) sendPanic('general'); };
-    header.appendChild(b);
-  }
-  // Avatar superior = Mi Perfil
-  const av = document.getElementById('userAvatar');
-  if (av) av.onclick = () => showSection('profile');
-  if (!document.getElementById('incomingCall')) { const inc = document.createElement('div'); inc.id = 'incomingCall'; inc.className = 'incoming-call hidden'; document.body.appendChild(inc); }
-  const girls = document.createElement('section');
-  girls.id = 'section-girls'; girls.className = 'app-section';
-  girls.innerHTML = `<div class="section-header"><h2>💃 Videollamada con chicas</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="girlsGrid" class="cards-grid"></div>`;
+  const header=document.querySelector('.app-header');
+  if(header&&!document.getElementById('panicTop')){const b=document.createElement('button');b.id='panicTop';b.className='panic-top';b.textContent='🆘';b.onclick=()=>{if(confirm('¿Enviar ALERTA DE PÁNICO al administrador con tu ubicación actual?'))sendPanic('general');};header.appendChild(b);}
+  const av=document.getElementById('userAvatar'); if(av) av.onclick=()=>toggleUserMenu();
+  if(!document.getElementById('incomingCall')){const inc=document.createElement('div');inc.id='incomingCall';inc.className='incoming-call hidden';document.body.appendChild(inc);}
+  const girls=document.createElement('section');girls.id='section-girls';girls.className='app-section';
+  girls.innerHTML=`<div class="section-header"><h2>💃 Videollamada con chicas</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="girlsGrid" class="cards-grid"></div>`;
   document.querySelector('.app-main').appendChild(girls);
-  const kyc = document.createElement('section');
-  kyc.id = 'section-kyc'; kyc.className = 'app-section';
-  kyc.innerHTML = `<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div>
+  const kyc=document.createElement('section');kyc.id='section-kyc';kyc.className='app-section';
+  kyc.innerHTML=`<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div>
     <form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><input type="file" id="kycIdCard" accept="image/*" required><label class="dim">🤳 Rostro</label><input type="file" id="kycFace" accept="image/*" required><button type="submit" class="btn-primary">Enviar</button></form>`;
   document.querySelector('.app-main').appendChild(kyc);
-  const mc = document.querySelector('#modal-recharge .modal-content');
-  if (mc) mc.innerHTML = `<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3).</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura</label><input type="file" id="reqProof" accept="image/*"><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
-  const recBtn = document.querySelector('#section-tokens .row-buttons .btn-primary');
-  if (recBtn) recBtn.onclick = async () => { openModal('modal-recharge'); await loadScript('tokens.js'); loadMyRecharges(); };
-  const tabs = document.querySelector('.admin-tabs');
-  if (tabs && !tabs.querySelector('[data-workers-tab]')) {
-    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-workers-tab onclick="switchAdminTab('workers',this)">💃 Trabajadoras</button>`);
-    const p1 = document.createElement('div'); p1.id = 'admin-workers'; p1.className = 'admin-panel';
-    p1.innerHTML = `<p class="dim">Asigna nivel y tarifa.</p><div id="adminWorkersList" class="list-compact"></div>`;
-    document.getElementById('section-admin').appendChild(p1);
-  }
-  if (tabs && !tabs.querySelector('[data-recharges-tab]')) {
-    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-recharges-tab onclick="switchAdminTab('recharges',this)">💳 Recargas</button>`);
-    const p2 = document.createElement('div'); p2.id = 'admin-recharges'; p2.className = 'admin-panel';
-    p2.innerHTML = `<div id="rechargeRequestsList" class="list-compact"></div>`;
-    document.getElementById('section-admin').appendChild(p2);
-  }
-  if (tabs && !tabs.querySelector('[data-safety-tab]')) {
-    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-safety-tab onclick="switchAdminTab('safety',this)">🚨 Seguridad</button>`);
-    const p3 = document.createElement('div'); p3.id = 'admin-safety'; p3.className = 'admin-panel';
-    p3.innerHTML = `<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>`;
-    document.getElementById('section-admin').appendChild(p3);
-  }
-  if (tabs && !tabs.querySelector('[data-modules-tab]')) {
-    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`);
-    const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel';
-    p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado de la app.</p><div id="modulesConfigList" class="list-compact"></div>`;
-    document.getElementById('section-admin').appendChild(p4);
-  }
+  const mc=document.querySelector('#modal-recharge .modal-content');
+  if(mc)mc.innerHTML=`<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3).</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura</label><input type="file" id="reqProof" accept="image/*"><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
+  const recBtn=document.querySelector('#section-tokens .row-buttons .btn-primary');
+  if(recBtn)recBtn.onclick=async()=>{openModal('modal-recharge');await loadScript('tokens.js');loadMyRecharges();};
+  const tabs=document.querySelector('.admin-tabs');
+  if(tabs&&!tabs.querySelector('[data-workers-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-workers-tab onclick="switchAdminTab('workers',this)">💃 Trabajadoras</button>`);const p1=document.createElement('div');p1.id='admin-workers';p1.className='admin-panel';p1.innerHTML=`<p class="dim">Asigna nivel y tarifa.</p><div id="adminWorkersList" class="list-compact"></div>`;document.getElementById('section-admin').appendChild(p1);}
+  if(tabs&&!tabs.querySelector('[data-recharges-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-recharges-tab onclick="switchAdminTab('recharges',this)">💳 Recargas</button>`);const p2=document.createElement('div');p2.id='admin-recharges';p2.className='admin-panel';p2.innerHTML=`<div id="rechargeRequestsList" class="list-compact"></div>`;document.getElementById('section-admin').appendChild(p2);}
+  if(tabs&&!tabs.querySelector('[data-safety-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-safety-tab onclick="switchAdminTab('safety',this)">🚨 Seguridad</button>`);const p3=document.createElement('div');p3.id='admin-safety';p3.className='admin-panel';p3.innerHTML=`<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>`;document.getElementById('section-admin').appendChild(p3);}
+  if(tabs&&!tabs.querySelector('[data-modules-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`);const p4=document.createElement('div');p4.id='admin-modules';p4.className='admin-panel';p4.innerHTML=`<p class="dim">Activa, marca "próximamente" u oculta cada apartado (también de la barra inferior).</p><div id="modulesConfigList" class="list-compact"></div>`;document.getElementById('section-admin').appendChild(p4);}
 }
 
-async function sendPanic(context, callId) {
-  const pos = await getPos();
-  await db.from('panic_alerts').insert({ user_id: currentUser.id, context: context || 'general', call_id: callId || null, latitude: pos?.lat || null, longitude: pos?.lng || null });
-  navigator.vibrate?.([400, 150, 400]);
-  showToast('🆘 Alerta enviada al administrador');
-}
-async function reportUser(targetId, reason) { await db.from('reports').insert({ reporter_id: currentUser.id, target_user_id: targetId, type: 'user', detail: reason }); showToast('🚩 Reporte enviado'); }
-function requireActive() {
-  if (currentProfile.role === 'admin' || currentProfile.unlimited_tokens) return true;
-  if (!currentProfile.is_active) { showToast('⚠️ Cuenta inactiva: solicita recarga (mín 3)'); showSection('tokens'); return false; }
-  return true;
-}
-function showLocked(name) { showToast('🔒 ' + name + ' estará disponible próximamente.'); }
+async function sendPanic(context,callId){const pos=await getPos();await db.from('panic_alerts').insert({user_id:currentUser.id,context:context||'general',call_id:callId||null,latitude:pos?.lat||null,longitude:pos?.lng||null});navigator.vibrate?.([400,150,400]);showToast('🆘 Alerta enviada al administrador');}
+async function reportUser(targetId,reason){await db.from('reports').insert({reporter_id:currentUser.id,target_user_id:targetId,type:'user',detail:reason});showToast('🚩 Reporte enviado');}
+function requireActive(){if(currentProfile.role==='admin'||currentProfile.unlimited_tokens)return true;if(!currentProfile.is_active){showToast('⚠️ Cuenta inactiva: solicita recarga (mín 3)');showSection('tokens');return false;}return true;}
+function showLocked(name){showToast('🔒 '+name+' estará disponible próximamente.');}
+function toggleUserMenu(){document.getElementById('userMenu')?.classList.toggle('hidden');}
+document.addEventListener('click',e=>{if(!e.target.closest('.user-avatar')&&!e.target.closest('.user-menu'))document.getElementById('userMenu')?.classList.add('hidden');});
+function buildUserMenu(){const m=document.getElementById('userMenu');if(!m)return;let h=`<div class="menu-item" onclick="showSection('profile')">👤 Mi Perfil</div>`;if(currentProfile.role==='remote_worker')h+=`<div class="menu-item" onclick="showSection('profileedit')">✏️ Perfil Pro</div>`;if(currentProfile.role==='admin')h+=`<div class="menu-item" onclick="showSection('admin')">🛡️ Panel Admin</div>`;h+=`<div class="menu-item logout" onclick="handleLogout()">🚪 Cerrar Sesión</div>`;m.innerHTML=h;}
 
-function updateHeader() {
-  if (!currentProfile) return;
-  const t = document.getElementById('userTokens');
-  if (t) t.textContent = currentProfile.unlimited_tokens ? '∞' : parseFloat(currentProfile.tokens_balance || 0).toFixed(2);
-  const av = document.getElementById('userAvatar'); if (av) av.textContent = (currentProfile.full_name || 'U').charAt(0).toUpperCase();
-  const w = document.getElementById('welcomeName'); if (w) w.textContent = (currentProfile.full_name || 'Usuario').split(' ')[0];
-  const wr = document.getElementById('welcomeRole'); if (wr) wr.textContent = 'Rol: ' + (ROLE_LABELS[currentProfile.role] || 'Usuario');
-  document.getElementById('btnJoinKyc')?.classList.toggle('hidden', !!currentProfile.is_verified);
-  const banner = document.getElementById('activationBanner');
-  const inactive = !currentProfile.is_active && currentProfile.role !== 'admin' && !currentProfile.unlimited_tokens;
-  if (banner) banner.classList.toggle('hidden', !inactive);
-  document.body.classList.toggle('has-banner', inactive);
+function updateHeader(){
+  if(!currentProfile)return;
+  const t=document.getElementById('userTokens');if(t)t.textContent=currentProfile.unlimited_tokens?'∞':parseFloat(currentProfile.tokens_balance||0).toFixed(2);
+  const av=document.getElementById('userAvatar');if(av)av.textContent=(currentProfile.full_name||'U').charAt(0).toUpperCase();
+  const w=document.getElementById('welcomeName');if(w)w.textContent=(currentProfile.full_name||'Usuario').split(' ')[0];
+  const wr=document.getElementById('welcomeRole');if(wr)wr.textContent='Rol: '+(ROLE_LABELS[currentProfile.role]||'Usuario');
+  document.getElementById('btnJoinKyc')?.classList.toggle('hidden',!!currentProfile.is_verified);
+  const banner=document.getElementById('activationBanner');
+  const inactive=!currentProfile.is_active&&currentProfile.role!=='admin'&&!currentProfile.unlimited_tokens;
+  if(banner)banner.classList.toggle('hidden',!inactive);
+  document.body.classList.toggle('has-banner',inactive);
+  buildUserMenu();
 }
-async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; if (currentProfile?.role === 'remote_worker') { localStorage.setItem('fendyx_online_intent', '0'); beaconOffline(); } localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
+async function handleLogout(){if(shareTimer)clearInterval(shareTimer);sharing=false;if(currentProfile?.role==='remote_worker'){localStorage.setItem('fendyx_online_intent','0');beaconOffline();}localStorage.removeItem('fendyx_last_section');await db.auth.signOut();location.replace('index.html');}
 
-function loadModules() {
-  const cfg = window._modulesConfig || {};
-  const role = currentProfile.role;
-  let mods = [];
-  for (const d of MODULE_DEFS) {
-    if (d.id === 'girls' && role === 'remote_worker') continue;
-    if (d.id === 'remote' && role !== 'remote_worker') continue;
-    if (d.id === 'delivery' && role !== 'delivery') continue;
-    const state = cfg[d.id] || 'on';
-    if (state === 'hidden' && role !== 'admin') continue;
-    mods.push({ id: d.id, n: d.n, state });
-  }
-  mods.push({ id: 'chat', n: 'Chat', state: 'on' }, { id: 'tokens', n: 'Tokens', state: 'on' });
-  if (role === 'admin') mods.unshift({ id: 'admin', n: 'Panel Admin', state: 'on' });
-  if (role === 'remote_worker' && currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', n: 'Mi Verificación', state: 'on' });
-  document.getElementById('modulesGrid').innerHTML = mods.map(m =>
-    `<div class="module-card ${m.state === 'off' ? 'mod-locked' : ''}" onclick="${m.state === 'off' ? `showLocked('${m.n}')` : `showSection('${m.id}')`}">
-      <span class="icon">${MODULE_ICONS[m.id] || '•'}</span><h3>${m.n}</h3>
-      ${m.state === 'off' ? '<span class="mod-lock">🔒 Próximamente</span>' : ''}
-      ${m.state === 'hidden' ? '<span class="mod-lock">🙈 Oculto</span>' : ''}
-    </div>`).join('');
+function moduleState(id){return (window._modulesConfig||{})[id]||'on';}
+function buildBottomNav(){
+  const nav=document.querySelector('.bottom-nav');if(!nav)return;
+  const items=[{id:'dashboard',ico:'🏠',n:'Inicio'},{id:'map',ico:'📍',n:'Mapa'},{id:'radar',ico:'🌙',n:'Radar'},{id:'chat',ico:'💬',n:'Chat'},{id:'tokens',ico:'◈',n:'Tokens'}];
+  nav.innerHTML=items.filter(it=>moduleState(it.id)!=='hidden').map(it=>{const st=moduleState(it.id);return `<button class="nav-item" data-nav="${it.id}" onclick="${st==='off'?`showLocked('${it.n}')`:`showSection('${it.id}')`}"><span class="nav-icon">${it.ico}</span><span class="nav-label">${it.n}</span></button>`;}).join('');
 }
-const MODULE_FILES = { map: 'map.js', radar: 'radar.js', events: 'radar.js', restaurants: 'restaurants.js', reservations: 'restaurants.js', orders: 'orders.js', delivery: 'delivery.js', remote: 'remote.js', girls: 'remote.js', kyc: 'remote.js', marketplace: 'market.js', chat: 'chat.js', tokens: 'tokens.js', profile: 'profile.js', profileedit: 'profile.js', admin: 'admin.js', calls: 'calls.js' };
-const LOADERS = { map: () => { initMap(); autoLocate(); loadMapUsers(); }, radar: () => loadRadar(), events: () => loadEvents(), restaurants: () => loadRestaurants(), reservations: () => loadReservations(), orders: () => loadOrders(), delivery: () => loadDeliveryHub(), remote: () => loadWorkers(), girls: () => loadGirls(), kyc: () => fillKycForm(), marketplace: () => loadMarketplace(), chat: () => loadConversations(), tokens: () => loadTransactions(), profile: () => loadProfileSection(), profileedit: () => fillProfilePro(), admin: () => loadAdmin() };
-function loadScript(file) { if (loadedScripts[file]) return loadedScripts[file]; loadedScripts[file] = new Promise(res => { const s = document.createElement('script'); s.src = 'js/' + file; s.onload = res; s.onerror = res; document.body.appendChild(s); }); return loadedScripts[file]; }
-async function showSection(name) {
-  const def = MODULE_DEFS.find(d => d.id === name);
-  if (def && currentProfile?.role !== 'admin') {
-    const st = (window._modulesConfig || {})[name] || 'on';
-    if (st === 'off') { showLocked(def.n); return; }
-    if (st === 'hidden') { showSection('dashboard'); return; }
+function loadModules(){
+  const role=currentProfile.role;
+  let mods=[];
+  for(const d of MODULE_DEFS){
+    if(d.id==='girls'&&role==='remote_worker')continue;
+    if(d.id==='remote'&&role!=='remote_worker')continue;
+    if(d.id==='delivery'&&role!=='delivery')continue;
+    const st=moduleState(d.id);
+    if(st==='hidden')continue;
+    mods.push({id:d.id,n:d.n,state:st});
   }
-  document.querySelectorAll('.app-section').forEach(s => s.classList.remove('active'));
-  document.getElementById('section-' + name)?.classList.add('active');
+  if(moduleState('tokens')!=='hidden')mods.push({id:'tokens',n:'Tokens',state:moduleState('tokens')});
+  if(role==='remote_worker'&&currentProfile.kyc_status!=='approved')mods.unshift({id:'kyc',n:'Mi Verificación',state:'on'});
+  document.getElementById('modulesGrid').innerHTML=mods.map(m=>`<div class="module-card ${m.state==='off'?'mod-locked':''}" onclick="${m.state==='off'?`showLocked('${m.n}')`:`showSection('${m.id}')`}"><span class="icon">${MODULE_ICONS[m.id]||'•'}</span><h3>${m.n}</h3>${m.state==='off'?'<span class="mod-lock">🔒 Próximamente</span>':''}</div>`).join('');
+  buildBottomNav();
+}
+const MODULE_FILES={map:'map.js',radar:'radar.js',events:'radar.js',restaurants:'restaurants.js',reservations:'restaurants.js',orders:'orders.js',delivery:'delivery.js',remote:'remote.js',girls:'remote.js',kyc:'remote.js',marketplace:'market.js',chat:'chat.js',tokens:'tokens.js',profile:'profile.js',profileedit:'profile.js',admin:'admin.js',calls:'calls.js'};
+const LOADERS={map:()=>{initMap();autoLocate();loadMapUsers();},radar:()=>loadRadar(),events:()=>loadEvents(),restaurants:()=>loadRestaurants(),reservations:()=>loadReservations(),orders:()=>loadOrders(),delivery:()=>loadDeliveryHub(),remote:()=>loadWorkers(),girls:()=>loadGirls(),kyc:()=>fillKycForm(),marketplace:()=>loadMarketplace(),chat:()=>loadConversations(),tokens:()=>loadTransactions(),profile:()=>loadProfileSection(),profileedit:()=>fillProfilePro(),admin:()=>loadAdmin()};
+function loadScript(file){if(loadedScripts[file])return loadedScripts[file];loadedScripts[file]=new Promise(res=>{const s=document.createElement('script');s.src='js/'+file;s.onload=res;s.onerror=res;document.body.appendChild(s);});return loadedScripts[file];}
+async function showSection(name){
+  const def=MODULE_DEFS.find(d=>d.id===name);
+  if(def){const st=moduleState(name);if(st==='off'){showLocked(def.n);return;}if(st==='hidden'){showSection('dashboard');return;}}
+  document.querySelectorAll('.app-section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('section-'+name)?.classList.add('active');
   document.getElementById('userMenu')?.classList.add('hidden');
-  try { localStorage.setItem('fendyx_last_section', name); } catch (e) {}
-  const navMap = { dashboard: 0, map: 1, radar: 2, chat: 3, tokens: 4 };
-  document.querySelectorAll('.bottom-nav .nav-item').forEach((n, i) => n.classList.toggle('active', i === navMap[name]));
-  if (MODULE_FILES[name]) await loadScript(MODULE_FILES[name]);
-  if (LOADERS[name]) { try { await LOADERS[name](); } catch (e) { console.error(e); } }
+  try{localStorage.setItem('fendyx_last_section',name);}catch(e){}
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===name));
+  if(MODULE_FILES[name])await loadScript(MODULE_FILES[name]);
+  if(LOADERS[name]){try{await LOADERS[name]();}catch(e){console.error(e);}}
 }
-function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
-function getPos() {
-  return new Promise(res => {
-    if (!navigator.geolocation) return res(null);
-    const opts = isIOS() ? { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 } : { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-    navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), err => {
-      if (err.code === 1) { showToast(isIOS() ? '📍 iOS: Ajustes → Privacidad → Localización → Safari → permitir' : '📍 Permiso de ubicación denegado'); return res(null); }
-      navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { enableHighAccuracy: !opts.enableHighAccuracy, timeout: 15000, maximumAge: 60000 });
-    }, opts);
-  });
-}
-async function toggleShareLocation() {
-  const btn = document.getElementById('btnShareLocation');
-  if (sharing) { sharing = false; if (shareTimer) clearInterval(shareTimer); await db.from('user_locations').update({ is_sharing: false }).eq('user_id', currentUser.id); if (btn) btn.textContent = '📡 Compartir ubicación'; showToast('📴 Dejaste de compartir'); return; }
-  const first = await getPos(); if (!first) return;
-  sharing = true; myLocation = first;
-  await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: first.lat, longitude: first.lng, is_sharing: true }, { onConflict: 'user_id' });
-  if (btn) btn.textContent = '🔴 EN VIVO (tocar para parar)';
-  if (map) map.setView([first.lat, first.lng], 14);
-  loadMapUsers();
-  shareTimer = setInterval(async () => { const p = await getPos(); if (!p || !sharing) return; myLocation = p; await db.from('user_locations').upsert({ user_id: currentUser.id, latitude: p.lat, longitude: p.lng, is_sharing: true }, { onConflict: 'user_id' }); loadMapUsers(); }, 6000);
-  showToast('📡 Compartiendo ubicación');
-}
-function autoLocate() { if (!sharing) toggleShareLocation(); }
-function haversine(a, b, c, d) { const R = 6371000, t = x => x * Math.PI / 180; const dLa = t(c - a), dLo = t(d - b); const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a)) * Math.cos(t(c)) * Math.sin(dLo / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)); }
-function fmtDist(m) { return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km'; }
-function stars(r) { const n = Math.round(parseFloat(r) || 0); return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
-function driverLevel(n) { return n >= 150 ? '💎 Élite' : n >= 50 ? '🥇 Experto' : n >= 10 ? '🥈 Confiable' : '🥉 Nuevo'; }
-function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
-function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
-function showToast(msg) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._tt); window._tt = setTimeout(() => t.classList.add('hidden'), 2800); }
-async function deductTokens(amount, desc) {
-  if (currentProfile.unlimited_tokens) return;
-  if (currentProfile.tokens_locked) { showToast('🔒 Tokens bloqueados por el admin'); return; }
-  const avail = parseFloat(currentProfile.tokens_balance || 0) - parseFloat(currentProfile.tokens_retained || 0);
-  if (avail < amount) { showToast('❌ Saldo disponible insuficiente'); return; }
-  const nb = parseFloat(currentProfile.tokens_balance) - amount;
-  await db.from('profiles').update({ tokens_balance: nb }).eq('id', currentUser.id);
-  await db.from('token_transactions').insert({ user_id: currentUser.id, amount: -amount, type: 'consumption', description: desc });
-  currentProfile.tokens_balance = nb; updateHeader();
-}
-async function addTokens(amount, desc) {
-  const nb = parseFloat(currentProfile.tokens_balance || 0) + amount;
-  await db.from('profiles').update({ tokens_balance: nb }).eq('id', currentUser.id);
-  await db.from('token_transactions').insert({ user_id: currentUser.id, amount, type: 'transfer', description: desc });
-  currentProfile.tokens_balance = nb; updateHeader();
-}
+function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
+function getPos(){return new Promise(res=>{if(!navigator.geolocation)return res(null);const opts=isIOS()?{enableHighAccuracy:false,timeout:15000,maximumAge:30000}:{enableHighAccuracy:true,timeout:10000,maximumAge:0};navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),err=>{if(err.code===1){showToast(isIOS()?'📍 iOS: Ajustes → Privacidad → Localización → Safari → permitir':'📍 Permiso denegado');return res(null);}navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),()=>res(null),{enableHighAccuracy:!opts.enableHighAccuracy,timeout:15000,maximumAge:60000});},opts);});}
+async function toggleShareLocation(){const btn=document.getElementById('btnShareLocation');if(sharing){sharing=false;if(shareTimer)clearInterval(shareTimer);await db.from('user_locations').update({is_sharing:false}).eq('user_id',currentUser.id);if(btn)btn.textContent='📡 Compartir ubicación';showToast('📴 Dejaste de compartir');return;}const first=await getPos();if(!first)return;sharing=true;myLocation=first;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:first.lat,longitude:first.lng,is_sharing:true},{onConflict:'user_id'});if(btn)btn.textContent='🔴 EN VIVO (tocar para parar)';if(map)map.setView([first.lat,first.lng],14);loadMapUsers();shareTimer=setInterval(async()=>{const p=await getPos();if(!p||!sharing)return;myLocation=p;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:p.lat,longitude:p.lng,is_sharing:true},{onConflict:'user_id'});loadMapUsers();},6000);showToast('📡 Compartiendo ubicación');}
+function autoLocate(){if(!sharing)toggleShareLocation();}
+function haversine(a,b,c,d){const R=6371000,t=x=>x*Math.PI/180;const dLa=t(c-a),dLo=t(d-b);const h=Math.sin(dLa/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dLo/2)**2;return R*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));}
+function fmtDist(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(1)+' km';}
+function stars(r){const n=Math.round(parseFloat(r)||0);return '★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);}
+function driverLevel(n){return n>=150?'💎 Élite':n>=50?'🥇 Experto':n>=10?'🥈 Confiable':'🥉 Nuevo';}
+function openModal(id){document.getElementById(id)?.classList.remove('hidden');}
+function closeModal(id){document.getElementById(id)?.classList.add('hidden');}
+function showToast(msg){const t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.classList.remove('hidden');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.add('hidden'),2800);}
+async function deductTokens(amount,desc){if(currentProfile.unlimited_tokens)return;if(currentProfile.tokens_locked){showToast('🔒 Tokens bloqueados por el admin');return;}const avail=parseFloat(currentProfile.tokens_balance||0)-parseFloat(currentProfile.tokens_retained||0);if(avail<amount){showToast('❌ Saldo disponible insuficiente');return;}const nb=parseFloat(currentProfile.tokens_balance)-amount;await db.from('profiles').update({tokens_balance:nb}).eq('id',currentUser.id);await db.from('token_transactions').insert({user_id:currentUser.id,amount:-amount,type:'consumption',description:desc});currentProfile.tokens_balance=nb;updateHeader();}
+async function addTokens(amount,desc){const nb=parseFloat(currentProfile.tokens_balance||0)+amount;await db.from('profiles').update({tokens_balance:nb}).eq('id',currentUser.id);await db.from('token_transactions').insert({user_id:currentUser.id,amount,type:'transfer',description:desc});currentProfile.tokens_balance=nb;updateHeader();}
 
-function startRealtime() {
-  if (liveChannel) return;
-  liveChannel = db.channel('fendyx-live')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO!'); navigator.vibrate?.([300, 100, 300]); } })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'role_details' }, () => {
-      if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
-      if (typeof loadWorkers === 'function' && document.getElementById('section-remote')?.classList.contains('active')) loadWorkers();
-      if (typeof loadWorkersAdmin === 'function' && document.getElementById('admin-workers')?.classList.contains('active')) loadWorkersAdmin();
-    })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => {
-      if (p.new.id === currentUser.id) loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); });
-      if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
-    })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharge_requests' }, p => { if (p.new.user_id === currentUser.id) { showToast(p.new.status === 'approved' ? '✅ Recarga aprobada' : p.new.status === 'rejected' ? '❌ Recarga rechazada' : ''); updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); } })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'video_calls' }, async p => { if (p.new.worker_id === currentUser.id && p.new.status === 'active') { await loadScript('calls.js'); if (typeof showIncomingCall === 'function') showIncomingCall(p.new); } })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'video_calls' }, async p => { if (p.new.status === 'ended' && (p.new.worker_id === currentUser.id || p.new.client_id === currentUser.id)) { await loadScript('calls.js'); if (typeof remoteHungUp === 'function') remoteHungUp(p.new); } })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { if (typeof loadOrders === 'function' && document.getElementById('section-orders')?.classList.contains('active')) loadOrders(); if (typeof loadDeliveryHub === 'function' && document.getElementById('section-delivery')?.classList.contains('active')) loadDeliveryHub(); })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'radar_presences' }, () => { if (typeof loadRadarUsers === 'function' && document.getElementById('section-radar')?.classList.contains('active')) loadRadarUsers(); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharge_requests' }, () => { if (currentProfile.role === 'admin' && typeof loadRechargeRequests === 'function' && document.getElementById('admin-recharges')?.classList.contains('active')) loadRechargeRequests(); })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_branding' }, () => loadBranding().then(() => { if (currentProfile) loadModules(); }))
+function startRealtime(){
+  if(liveChannel)return;
+  liveChannel=db.channel('fendyx-live')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>{if(typeof onMessageRealtime==='function')onMessageRealtime(p.new);})
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'panic_alerts'},()=>{if(currentProfile.role==='admin'){showToast('🆘 ¡ALERTA DE PÁNICO!');navigator.vibrate?.([300,100,300]);}})
+    .on('postgres_changes',{event:'*',schema:'public',table:'role_details'},()=>{if(typeof loadGirls==='function'&&document.getElementById('section-girls')?.classList.contains('active'))loadGirls();if(typeof loadWorkers==='function'&&document.getElementById('section-remote')?.classList.contains('active'))loadWorkers();if(typeof loadWorkersAdmin==='function'&&document.getElementById('admin-workers')?.classList.contains('active'))loadWorkersAdmin();})
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles'},p=>{if(p.new.id===currentUser.id)loadProfile().then(()=>{updateHeader();if(document.getElementById('section-tokens')?.classList.contains('active'))loadTransactions?.();});if(typeof loadGirls==='function'&&document.getElementById('section-girls')?.classList.contains('active'))loadGirls();})
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'recharge_requests'},p=>{if(p.new.user_id===currentUser.id){showToast(p.new.status==='approved'?'✅ Recarga aprobada':p.new.status==='rejected'?'❌ Recarga rechazada':'');updateHeader();if(document.getElementById('section-tokens')?.classList.contains('active'))loadTransactions?.();}})
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'video_calls'},async p=>{if(p.new.worker_id===currentUser.id&&p.new.status==='active'){await loadScript('calls.js');if(typeof showIncomingCall==='function')showIncomingCall(p.new);}})
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'video_calls'},async p=>{if(p.new.status==='ended'&&(p.new.worker_id===currentUser.id||p.new.client_id===currentUser.id)){await loadScript('calls.js');if(typeof remoteHungUp==='function')remoteHungUp(p.new);}})
+    .on('postgres_changes',{event:'*',schema:'public',table:'orders'},()=>{if(typeof loadOrders==='function'&&document.getElementById('section-orders')?.classList.contains('active'))loadOrders();if(typeof loadDeliveryHub==='function'&&document.getElementById('section-delivery')?.classList.contains('active'))loadDeliveryHub();})
+    .on('postgres_changes',{event:'*',schema:'public',table:'radar_presences'},()=>{if(typeof loadRadarUsers==='function'&&document.getElementById('section-radar')?.classList.contains('active'))loadRadarUsers();})
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'recharge_requests'},()=>{if(currentProfile.role==='admin'&&typeof loadRechargeRequests==='function'&&document.getElementById('admin-recharges')?.classList.contains('active'))loadRechargeRequests();})
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_branding'},()=>loadBranding().then(()=>{if(currentProfile){loadModules();}}))
     .subscribe();
 }

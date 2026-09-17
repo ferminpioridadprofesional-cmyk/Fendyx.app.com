@@ -24,6 +24,7 @@ function injectProfileStyle() {
   document.head.appendChild(st);
 }
 function openLightbox(url) { const lb = document.createElement('div'); lb.className = 'pf-lightbox'; lb.innerHTML = `<img src="${url}">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb); }
+
 async function loadProfileSection() {
   const p = currentProfile;
   document.getElementById('profileName').textContent = p.model_name || p.full_name || 'Usuario';
@@ -35,7 +36,14 @@ async function loadProfileSection() {
   document.getElementById('profileAvatar').textContent = (p.full_name || 'U').charAt(0).toUpperCase();
   const img = document.getElementById('profileAvatarImg');
   if (p.avatar_url) { img.src = p.avatar_url; img.style.display = 'block'; document.getElementById('profileAvatar').style.display = 'none'; }
+  // Botones integrados: Perfil Pro + Cerrar Sesión
+  const sec = document.getElementById('section-profile');
+  let actions = document.getElementById('profileActions');
+  if (!actions) { actions = document.createElement('div'); actions.id = 'profileActions'; actions.className = 'row-buttons'; actions.style.marginTop = '14px'; sec.appendChild(actions); }
+  actions.innerHTML = `<button class="btn-secondary half" onclick="showSection('profileedit')">✏️ Perfil Pro</button>
+    <button class="btn-secondary half" style="border-color:var(--error);color:var(--error)" onclick="handleLogout()">🚪 Cerrar Sesión</button>`;
 }
+
 function fillProfilePro() {
   const p = currentProfile;
   _pe.interests = new Set(p.interests || []); _pe.preferences = new Set(p.preferences || []); _pe.zodiac = p.zodiac || null;
@@ -67,6 +75,7 @@ async function saveProfilePro(e) {
   await loadProfile(); updateHeader(); loadProfileSection(); fillProfilePro();
   showToast('✅ Perfil Pro actualizado');
 }
+
 async function viewUserProfile(userId) {
   injectProfileStyle();
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('id', userId).single();
@@ -79,7 +88,7 @@ async function viewUserProfile(userId) {
   const allPhotos = [mainPhoto, ...(data.gallery_urls || [])].filter(Boolean).slice(0, 6);
   document.getElementById('upName').textContent = displayName;
   const modalContent = document.querySelector('#modal-userprofile .modal-content');
-  if (modalContent) { modalContent.className = 'modal-content wide tier-' + lvNum; }
+  if (modalContent) modalContent.className = 'modal-content wide tier-' + lvNum;
   const hero = document.querySelector('#modal-userprofile .pf-hero');
   if (hero) hero.outerHTML = `<div class="pf-hero">
     ${mainPhoto ? `<img src="${mainPhoto}" onclick="openLightbox('${mainPhoto}')">` : `<div class="pf-hero-letter">${(displayName || '?').charAt(0).toUpperCase()}</div>`}

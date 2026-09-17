@@ -164,6 +164,7 @@ async function startKyc(userId, name) { kycTarget = userId; await loadScript('ca
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
+// ===== TRABAJADORAS: lectura ya abierta + escritura vía RPC blindada =====
 async function loadWorkersAdmin() {
   const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('full_name');
   document.getElementById('adminWorkersList').innerHTML = (data || []).map(w => {
@@ -181,18 +182,18 @@ async function loadWorkersAdmin() {
 async function setWorkerLevel(id, level) {
   const lv = parseInt(level, 10); const lvl = LEVELS.find(x => x.level === lv);
   if (!lvl) return showToast('❌ Nivel inválido');
-  const { data, error } = await db.from('role_details').update({ worker_level: lvl.level, rate_per_minute: lvl.rate }).eq('user_id', id).select();
+  const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: lvl.level, p_rate: lvl.rate });
   if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.length) return showToast('❌ No se guardó (sin permisos o sin fila)');
+  if (!data || !data.startsWith('OK')) return showToast('❌ ' + (data || 'fallo desconocido'));
   showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' (◈ ' + lvl.rate + '/min)');
   loadWorkersAdmin();
 }
 async function setWorkerRate(id) {
   const rate = parseFloat(document.getElementById('rate_' + id).value);
   if (isNaN(rate) || rate < 0.2 || rate > 3) return showToast('Rango 0.2 a 3');
-  const { data, error } = await db.from('role_details').update({ rate_per_minute: rate }).eq('user_id', id).select();
+  const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: null, p_rate: rate });
   if (error) return showToast('❌ ' + error.message);
-  if (!data || !data.length) return showToast('❌ No se guardó');
+  if (!data || !data.startsWith('OK')) return showToast('❌ ' + (data || 'fallo'));
   showToast('✅ Tarifa ◈ ' + rate + '/min'); loadWorkersAdmin();
 }
 

@@ -27,6 +27,13 @@ function injectAdminExtras() {
     m.innerHTML = `<div class="modal-content wide"><div class="modal-head"><h3 id="ufTitle">Ficha</h3><button class="modal-close" onclick="closeModal('modal-userfile')">✕</button></div><div id="ufBody"></div></div>`;
     document.body.appendChild(m);
   }
+  const tabs = document.querySelector('.admin-tabs');
+  if (tabs && !tabs.querySelector('[data-modules-tab]')) {
+    tabs.insertAdjacentHTML('beforeend', `<button class="admin-tab" data-modules-tab onclick="switchAdminTab('modules',this)">🧩 Apartados</button>`);
+    const p4 = document.createElement('div'); p4.id = 'admin-modules'; p4.className = 'admin-panel';
+    p4.innerHTML = `<p class="dim">Activa, marca "próximamente" u oculta cada apartado de la app.</p><div id="modulesConfigList" class="list-compact"></div>`;
+    document.getElementById('section-admin').appendChild(p4);
+  }
 }
 async function purgeActivity() { if (!confirm('¿Borrar actividad y transacciones? Los saldos NO se afectan.')) return; const { data, error } = await db.rpc('admin_purge_logs'); if (error) return showToast('❌ ' + error.message); showToast('🗑 Purgado: ' + data); loadAdminOverview(); }
 async function purgeChats() { if (!confirm('¿Borrar TODOS los chats?')) return; const { data, error } = await db.rpc('admin_purge_chats'); if (error) return showToast('❌ ' + error.message); showToast('💬 Eliminados: ' + data); }
@@ -37,7 +44,7 @@ function switchAdminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('admin-' + tab)?.classList.add('active');
-  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety };
+  const loaders = { overview: loadAdminOverview, users: loadAdminUsers, tokens: loadAdminTransactions, content: loadAdminContent, withdrawals: loadAdminWithdrawals, kyc: loadKycList, workers: loadWorkersAdmin, recharges: loadRechargeRequests, safety: loadSafety, modules: loadApartados };
   loaders[tab]?.();
 }
 function startSafetyRealtime() {
@@ -47,6 +54,7 @@ function startSafetyRealtime() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => { if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety(); })
     .subscribe();
 }
+
 async function loadAdminOverview() {
   const [u, o, c, tx] = await Promise.all([
     db.from('profiles').select('tokens_balance'),
@@ -164,7 +172,6 @@ async function startKyc(userId, name) { kycTarget = userId; await loadScript('ca
 async function kycMarkVerified() { if (!kycTarget) return; await db.from('profiles').update({ is_verified: true, kyc_status: 'approved', is_active: true }).eq('id', kycTarget); kycTarget = null; loadKycList(); }
 function closeKyc() { if (typeof callRoom !== 'undefined' && callRoom) endWebCall(); else closeModal('modal-kyc'); }
 
-// ===== TRABAJADORAS: LECTURA Y ESCRITURA 100% VÍA RPC (superusuario) =====
 async function loadWorkersAdmin() {
   const { data, error } = await db.rpc('admin_get_workers');
   if (error) { document.getElementById('adminWorkersList').innerHTML = '<p class="empty-state">❌ ' + error.message + '</p>'; return; }
@@ -186,7 +193,7 @@ async function setWorkerLevel(id, level) {
   const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: lvl.level, p_rate: lvl.rate });
   if (error) return showToast('❌ ' + error.message);
   if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
-  showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' · BD confirmó: ' + data);
+  showToast('✅ ' + lvl.ico + ' ' + lvl.name + ' · BD: ' + data);
   await loadWorkersAdmin();
 }
 async function setWorkerRate(id) {
@@ -195,8 +202,31 @@ async function setWorkerRate(id) {
   const { data, error } = await db.rpc('admin_set_worker_level', { p_uid: id, p_level: null, p_rate: rate });
   if (error) return showToast('❌ ' + error.message);
   if (!data || !data.startsWith('OK')) return showToast('❌ BD dijo: ' + (data || 'nada'));
-  showToast('✅ Tarifa ◈ ' + rate + '/min · BD: ' + data);
+  showToast('✅ Tarifa ◈ ' + rate + '/min');
   await loadWorkersAdmin();
+}
+
+// ===== CONTROL DE APARTADOS (activo / próximamente / oculto) =====
+function loadApartados() {
+  const cfg = window._modulesConfig || {};
+  document.getElementById('modulesConfigList').innerHTML = MODULE_DEFS.map(d => {
+    const st = cfg[d.id] || 'on';
+    return `<div class="row-item"><div class="row-main"><b>${MODULE_ICONS[d.id] || ''} ${d.n}</b>
+      <small>${st === 'on' ? '🟢 Activo' : st === 'off' ? '🔒 Deshabilitado (próximamente)' : '🙈 Oculto'}</small></div>
+      <select class="btn-small" onchange="saveModuleState('${d.id}', this.value)">
+        <option value="on" ${st === 'on' ? 'selected' : ''}>🟢 Activo</option>
+        <option value="off" ${st === 'off' ? 'selected' : ''}>🔒 Próximamente</option>
+        <option value="hidden" ${st === 'hidden' ? 'selected' : ''}>🙈 Oculto</option>
+      </select></div>`;
+  }).join('');
+}
+async function saveModuleState(id, state) {
+  const cfg = Object.assign({}, window._modulesConfig || {});
+  cfg[id] = state;
+  await db.from('app_branding').update({ modules_config: cfg, updated_at: new Date().toISOString() }).eq('id', 1);
+  window._modulesConfig = cfg;
+  showToast('✅ Apartado actualizado para todos');
+  loadApartados(); loadModules();
 }
 
 async function runAudit() { const q = document.getElementById('auditSearch').value.trim(); const box = document.getElementById('auditResults'); if (q.length < 3) { box.innerHTML = '<p>Mín 3 caracteres</p>'; return; } const { data } = await db.from('messages').select('*, profiles!messages_sender_id_fkey(email)').ilike('content', '%' + q + '%').limit(50); box.innerHTML = (data || []).map(m => `<div class="row-item"><div class="row-main"><b>${m.profiles?.email || '—'}</b><div>…${m.content}…</div></div><button class="btn-small danger" onclick="toggleBan('${m.sender_id}',true)">🚫</button></div>`).join('') || '<p>Sin coincidencias</p>'; }

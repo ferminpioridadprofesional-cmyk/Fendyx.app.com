@@ -11,9 +11,11 @@ function injectAdminExtras() {
   if (document.getElementById('adminPurgeRow')) return;
   const ov = document.getElementById('admin-overview');
   if (ov) ov.insertAdjacentHTML('beforeend', `
-    <div id="adminPurgeRow" class="row-buttons" style="margin-top:16px">
-      <button class="btn-small danger" onclick="purgeActivity()">🗑 Purgar registro de actividad</button>
+    <div id="adminPurgeRow" class="row-buttons" style="margin-top:16px;flex-wrap:wrap">
+      <button class="btn-small danger" onclick="purgeActivity()">🗑 Purgar actividad</button>
       <button class="btn-small danger" onclick="purgeChats()">💬 Borrar TODOS los chats</button>
+      <button class="btn-small danger" onclick="purgePanic()">🆘 Borrar alertas de pánico</button>
+      <button class="btn-small danger" onclick="purgeCalls()">📞 Borrar historial de llamadas</button>
     </div>`);
   if (!document.getElementById('modal-userfile')) {
     const m = document.createElement('div'); m.id = 'modal-userfile'; m.className = 'modal hidden';
@@ -22,7 +24,7 @@ function injectAdminExtras() {
   }
 }
 async function purgeActivity() {
-  if (!confirm('Se BORRARÁN el registro de actividad y el historial de transacciones de la BD. Los saldos NO se afectan. ¿Continuar?')) return;
+  if (!confirm('Se BORRARÁN el registro de actividad y el historial de transacciones. Los saldos NO se afectan. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_purge_logs');
   if (error) { showToast('❌ ' + error.message); return; }
   showToast('🗑 Actividad purgada: ' + data); loadAdminOverview();
@@ -32,6 +34,19 @@ async function purgeChats() {
   const { data, error } = await db.rpc('admin_purge_chats');
   if (error) { showToast('❌ ' + error.message); return; }
   showToast('💬 Chats eliminados: ' + data);
+}
+async function purgePanic() {
+  if (!confirm('Se BORRARÁ todo el historial de alertas de pánico. ¿Continuar?')) return;
+  const { data, error } = await db.rpc('admin_purge_panic');
+  if (error) { showToast('❌ ' + error.message); return; }
+  showToast('🆘 Alertas de pánico borradas: ' + data);
+  if (document.getElementById('admin-safety')?.classList.contains('active')) loadSafety();
+}
+async function purgeCalls() {
+  if (!confirm('Se BORRARÁ todo el historial de videollamadas. ¿Continuar?')) return;
+  const { data, error } = await db.rpc('admin_purge_calls');
+  if (error) { showToast('❌ ' + error.message); return; }
+  showToast('📞 Historial de llamadas borrado: ' + data); loadAdminOverview();
 }
 function switchAdminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -101,7 +116,7 @@ function renderAdminUsers() {
      </td></tr>`).join('');
 }
 async function deleteUserFully(id, email) {
-  if (!confirm('ELIMINAR POR COMPLETO a ' + email + ' de la base de datos (perfil, chats, pedidos, tokens, todo). Su correo quedará LIBRE para registrarse de nuevo. ¿Continuar?')) return;
+  if (!confirm('ELIMINAR POR COMPLETO a ' + email + ' de la BD (perfil, chats, pedidos, tokens, todo). Su correo quedará LIBRE para registrarse de nuevo. ¿Continuar?')) return;
   const { data, error } = await db.rpc('admin_delete_user', { p_uid: id });
   if (error || (data && data.startsWith('ERROR'))) { showToast('❌ ' + (data || error.message)); return; }
   showToast('🗑 Usuario eliminado por completo'); loadAdminUsers(); loadAdminOverview();

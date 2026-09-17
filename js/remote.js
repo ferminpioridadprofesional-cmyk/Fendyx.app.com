@@ -10,7 +10,22 @@ function injectGirlStyle() {
     .girl-initial{font-size:3rem;color:var(--dim)}
     .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
     .girl-thumbs img{width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--border);cursor:pointer}
-    .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}`;
+    .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+    .wk-card{padding:18px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:center}
+    .wk-name{font-family:'Orbitron';font-weight:900;font-size:1.3rem;margin-bottom:8px}
+    .wk-row{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
+    .wk-rate{font-weight:800;color:var(--primary)}
+    .wk-kyc{font-size:.85rem;color:var(--dim);margin:6px 0 14px}
+    .wk-switch-row{display:flex;justify-content:center;align-items:center;gap:14px}
+    .wk-state{font-weight:900;font-size:.95rem}
+    .wk-state.on{color:var(--success)} .wk-state.off{color:var(--error)}
+    .wk-switch{position:relative;display:inline-block;width:64px;height:32px}
+    .wk-switch input{opacity:0;width:0;height:0}
+    .wk-slider{position:absolute;inset:0;border-radius:999px;background:rgba(255,59,107,.25);border:1px solid var(--error);transition:.3s;cursor:pointer}
+    .wk-slider:before{content:'';position:absolute;width:26px;height:26px;left:3px;top:2px;border-radius:50%;background:var(--error);transition:.3s;box-shadow:0 0 10px rgba(255,59,107,.6)}
+    .wk-switch input:checked + .wk-slider{background:rgba(0,255,157,.2);border-color:var(--success);animation:switchGlow 1.6s infinite}
+    .wk-switch input:checked + .wk-slider:before{transform:translateX(32px);background:var(--success);box-shadow:0 0 14px rgba(0,255,157,.8)}
+    @keyframes switchGlow{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.3)}50%{box-shadow:0 0 18px rgba(0,255,157,.7)}}`;
   document.head.appendChild(st);
 }
 function girlCard(w) {
@@ -49,15 +64,23 @@ async function loadWorkers() {
   const grid = document.getElementById('workersGrid');
   const panel = document.getElementById('workerPanel');
   if (isWorker) {
+    injectGirlStyle();
     grid.style.display = 'none'; grid.innerHTML = '';
     panel.classList.remove('hidden');
     const lvNum = Math.min(5, Math.max(1, parseInt(roleDetails?.worker_level) || 1));
-    document.getElementById('workerSpecialty').value = roleDetails?.specialty || '';
-    document.getElementById('workerBio').value = currentProfile.bio || roleDetails?.bio || '';
-    document.getElementById('workerOnline').checked = !!currentProfile.is_online;
-    const info = document.getElementById('workerLevelInfo');
-    if (info) info.innerHTML = `Nombre artístico: <b>${currentProfile.model_name || '(defínelo en Perfil Pro)'}</b><br>Tu nivel: ${levelBadge(lvNum)} · Tarifa: <b>◈ ${roleDetails?.rate_per_minute != null ? roleDetails.rate_per_minute : levelInfo(lvNum).rate}/min</b> · KYC: <b>${currentProfile.kyc_status}</b><br>${currentProfile.is_online ? '🟢 EN LÍNEA: recibes llamadas' : '🔴 DESCONECTADA'}`;
-    loadMyCalls();
+    const rate = roleDetails?.rate_per_minute != null ? roleDetails.rate_per_minute : levelInfo(lvNum).rate;
+    const on = !!currentProfile.is_online;
+    panel.innerHTML = `<h3>💼 Mi Trabajo</h3>
+      <div class="wk-card tier-${lvNum}">
+        <div class="wk-name">🎭 ${currentProfile.model_name || 'Modelo'}</div>
+        <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">◈ ${rate}/min</span></div>
+        <div class="wk-kyc">${currentProfile.kyc_status === 'approved' ? '✅ Verificación KYC aprobada' : '⏳ Verificación KYC pendiente'}</div>
+        <div class="wk-switch-row">
+          <span id="wkState" class="wk-state ${on ? 'on' : 'off'}">${on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'}</span>
+          <label class="wk-switch"><input type="checkbox" id="wkToggle" ${on ? 'checked' : ''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label>
+        </div>
+        <p class="dim" style="margin-top:12px">Solo recibes llamadas mientras mantienes la app/página <b>abierta</b> y el interruptor en verde. Al minimizar o cerrar, pasas a desconectada automáticamente.</p>
+      </div>`;
     return;
   }
   injectGirlStyle();
@@ -66,13 +89,12 @@ async function loadWorkers() {
   const list = await fetchPublicWorkers();
   grid.innerHTML = list.map(girlCard).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
-async function saveWorkerProfile(e) {
-  e.preventDefault();
-  await db.from('role_details').upsert({ user_id: currentUser.id, role_type: 'remote_worker', specialty: document.getElementById('workerSpecialty').value, bio: document.getElementById('workerBio').value }, { onConflict: 'user_id' });
-  await db.from('profiles').update({ bio: document.getElementById('workerBio').value, is_online: document.getElementById('workerOnline').checked }).eq('id', currentUser.id);
-  currentProfile.is_online = document.getElementById('workerOnline').checked;
-  showToast(currentProfile.is_online ? '🟢 En línea' : '🔴 Desconectada');
-  loadWorkers();
+async function setWorkerOnline(on) {
+  localStorage.setItem('fendyx_online_intent', on ? '1' : '0');
+  await setWorkerOnlineDB(on);
+  const st = document.getElementById('wkState');
+  if (st) { st.className = 'wk-state ' + (on ? 'on' : 'off'); st.textContent = on ? '🟢 EN LÍNEA' : '🔴 DESCONECTADA'; }
+  showToast(on ? '🟢 En línea: te pueden llamar' : '🔴 Desconectada');
 }
 function fillKycForm() {
   const p = currentProfile;
@@ -91,16 +113,12 @@ async function submitKycDocs(e) {
   await db.from('profiles').update(up).eq('id', currentUser.id);
   await loadProfile(); fillKycForm(); showToast('📨 Enviado');
 }
-async function loadMyCalls() {
-  const { data } = await db.from('video_calls').select('*, profiles!video_calls_client_id_fkey(full_name, model_name)').eq('worker_id', currentUser.id).eq('status', 'active');
-  document.getElementById('myCallsList').innerHTML = (data || []).map(c => `<div class="row-item"><div class="row-main"><b>📞 ${c.profiles?.model_name || c.profiles?.full_name || 'Cliente'}</b><small>◈ ${c.rate_per_minute}/min</small></div><button class="btn-small success" onclick="joinCall('${c.id}','${c.room_id}',${c.rate_per_minute})">Contestar</button></div>`).join('') || '<p class="empty-state">Sin llamadas</p>';
-}
 async function startCall(workerId, rate) {
   if (!requireActive()) return;
   rate = parseFloat(rate) || 0.2;
   const { data: wk } = await db.from('profiles').select('is_online, kyc_status').eq('id', workerId).single();
   if (!wk || wk.kyc_status !== 'approved') { showToast('❌ No verificada'); return; }
-  if (!wk.is_online) { showToast('❌ No está en línea'); return; }
+  if (!wk.is_online) { showToast('❌ No está en línea ahora'); return; }
   if (!currentProfile.unlimited_tokens && parseFloat(currentProfile.tokens_balance) < rate) { showToast('❌ Saldo insuficiente'); return; }
   const roomId = 'FENDYX' + Date.now();
   const { data: call } = await db.from('video_calls').insert({ worker_id: workerId, client_id: currentUser.id, room_id: roomId, rate_per_minute: rate, status: 'active', started_at: new Date().toISOString() }).select().single();

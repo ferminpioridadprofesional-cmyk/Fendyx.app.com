@@ -19,7 +19,7 @@ function injectProfileStyle(){
     .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}`;
   document.head.appendChild(st);
 }
-// Carrusel a pantalla completa con deslizamiento
+function getHeroEl(){return document.querySelector('#modal-userprofile .pf-hero')||document.querySelector('#modal-userprofile .up-hero');}
 let _lbUrls=[], _lbIdx=0, _lbX=null;
 function openLightbox(urls, idx){
   _lbUrls=urls||[]; _lbIdx=idx||0;
@@ -52,7 +52,7 @@ async function loadProfileSection(){
   let gal=document.getElementById('profileNormalGallery');
   if(!gal){gal=document.createElement('div');gal.id='profileNormalGallery';sec.appendChild(gal);}
   const photos=(p.gallery_urls||[]).slice(0,3);
-  gal.innerHTML=`<h4 class="sub-title">📸 Mis fotos (máx 3)</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick="openLightbox(${JSON.stringify(photos)},${i})">`).join('')}</div>`:'<p class="dim">Sin fotos aún</p>'}`;
+  gal.innerHTML=`<h4 class="sub-title">📸 Mis fotos (máx 3)</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='openLightbox(${JSON.stringify(photos)},${i})'>`).join('')}</div>`:'<p class="dim">Sin fotos aún</p>'}`;
   let kycBox=document.getElementById('profileKycBox');
   if(!kycBox){kycBox=document.createElement('div');kycBox.id='profileKycBox';sec.appendChild(kycBox);}
   if(p.role!=='remote_worker'){
@@ -82,8 +82,6 @@ async function submitClientKyc(e){
   await loadProfile(); loadProfileSection();
   showToast('📨 Verificación enviada. El admin la revisará.');
 }
-
-// EDITOR NORMAL (todos): avatar + máx 3 fotos + datos básicos
 function fillProfilePro(){
   const p=currentProfile;
   const form=document.querySelector('#section-profileedit form');
@@ -109,8 +107,6 @@ async function saveProfilePro(e){
   await loadProfile();updateHeader();loadProfileSection();fillProfilePro();
   showToast('✅ Perfil actualizado');
 }
-
-// VISTA PÚBLICA NORMAL (nunca revela que es trabajadora)
 async function viewUserProfile(userId){
   injectProfileStyle();
   const {data}=await db.from('profiles').select('*').eq('id',userId).single();
@@ -120,9 +116,9 @@ async function viewUserProfile(userId){
   const photos=(data.gallery_urls||[]).slice(0,3);
   document.getElementById('upName').textContent=displayName;
   const mc=document.querySelector('#modal-userprofile .modal-content'); if(mc) mc.className='modal-content wide';
-  const hero=document.querySelector('#modal-userprofile .pf-hero');
+  const hero=getHeroEl();
   if(hero)hero.outerHTML=`<div class="pf-hero">
-    ${data.avatar_url?`<img src="${data.avatar_url}" onclick="openLightbox(${JSON.stringify([data.avatar_url,...photos])},0)">`:`<div class="pf-hero-letter">${displayName.charAt(0).toUpperCase()}</div>`}
+    ${data.avatar_url?`<img src="${data.avatar_url}" onclick='openLightbox(${JSON.stringify([data.avatar_url,...photos])},0)'>`:`<div class="pf-hero-letter">${displayName.charAt(0).toUpperCase()}</div>`}
     <div class="pf-meta"><b>${displayName}${data.age?' · '+data.age+' años':''}</b>
     <span class="role-badge">${ROLE_LABELS[data.role==='remote_worker'?'user':data.role]||'Usuario'}</span>
     <div style="margin-top:6px">${stars(data.rating||5)} ${parseFloat(data.rating||5).toFixed(1)}</div>
@@ -132,13 +128,12 @@ async function viewUserProfile(userId){
   document.getElementById('upBio').innerHTML=data.bio||'Sin descripción.';
   document.getElementById('upInterests').innerHTML='<p class="dim">Información privada</p>';
   const gal=document.getElementById('upGallery');
-  if(gal)gal.outerHTML=`<div id="upGallery"><h4 class="sub-title">📸 Fotos</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick="openLightbox(${JSON.stringify(photos)},${i})">`).join('')}</div>`:'<p class="dim">Sin fotos</p>'}</div>`;
+  if(gal)gal.outerHTML=`<div id="upGallery"><h4 class="sub-title">📸 Fotos</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='openLightbox(${JSON.stringify(photos)},${i})'>`).join('')}</div>`:'<p class="dim">Sin fotos</p>'}</div>`;
   const actions=document.getElementById('upActions');
   actions.innerHTML=`${data.id!==currentUser.id?`<button class="btn-secondary" onclick="messageFromProfile()">💬 Mensaje</button>`:''}
     ${data.id!==currentUser.id?`<button class="btn-secondary" style="border-color:var(--error);color:var(--error)" onclick="reportFromProfile()">🚩 Reportar</button>`:''}`;
   openModal('modal-userprofile');
 }
-// VISTA MODELO (solo dentro del área de chicas)
 async function viewWorkerProfile(userId, preview){
   injectProfileStyle();
   const {data}=await db.from('profiles').select('*, role_details(*)').eq('id',userId).single();
@@ -150,9 +145,9 @@ async function viewWorkerProfile(userId, preview){
   const photos=(data.worker_gallery||[]).slice(0,5);
   const mc=document.querySelector('#modal-userprofile .modal-content'); if(mc) mc.className='modal-content wide tier-'+lvNum;
   document.getElementById('upName').textContent=name;
-  const hero=document.querySelector('#modal-userprofile .pf-hero');
+  const hero=getHeroEl();
   if(hero)hero.outerHTML=`<div class="pf-hero">
-    ${(data.avatar_url||photos[0])?`<img src="${data.avatar_url||photos[0]}" onclick="openLightbox(${JSON.stringify(photos.length?photos:[data.avatar_url])},0)">`:`<div class="pf-hero-letter">${name.charAt(0).toUpperCase()}</div>`}
+    ${(data.avatar_url||photos[0])?`<img src="${data.avatar_url||photos[0]}" onclick='openLightbox(${JSON.stringify(photos.length?photos:[data.avatar_url])},0)'>`:`<div class="pf-hero-letter">${name.charAt(0).toUpperCase()}</div>`}
     <div class="pf-meta"><b>${name}${data.age?' · '+data.age:''}</b>${levelBadge(lvNum)}
     <div style="margin-top:6px">◈ ${rd?.rate_per_minute||levelInfo(lvNum).rate}/min · ${stars(data.rating||5)}</div>
     ${data.zodiac?`<div class="dim">${data.zodiac}</div>`:''}</div></div>`;
@@ -161,7 +156,7 @@ async function viewWorkerProfile(userId, preview){
   document.getElementById('upBio').innerHTML=data.bio||rd?.bio||'';
   document.getElementById('upInterests').innerHTML=(data.interests||[]).map(i=>`<span class="chip active">🎯 ${i}</span>`).join('')+(data.preferences||[]).map(i=>`<span class="chip">💫 ${i}</span>`).join('')||'<p class="dim">—</p>';
   const gal=document.getElementById('upGallery');
-  if(gal)gal.outerHTML=`<div id="upGallery"><h4 class="sub-title">📸 Galería</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick="openLightbox(${JSON.stringify(photos)},${i})">`).join('')}</div>`:'<p class="dim">Sin fotos</p>'}</div>`;
+  if(gal)gal.outerHTML=`<div id="upGallery"><h4 class="sub-title">📸 Galería</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='openLightbox(${JSON.stringify(photos)},${i})'>`).join('')}</div>`:'<p class="dim">Sin fotos</p>'}</div>`;
   const actions=document.getElementById('upActions');
   const rate=rd?.rate_per_minute!=null?rd.rate_per_minute:levelInfo(lvNum).rate;
   actions.innerHTML= preview ? '<p class="dim">Vista previa (solo lectura)</p>'

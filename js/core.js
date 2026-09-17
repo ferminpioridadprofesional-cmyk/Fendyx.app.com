@@ -66,7 +66,7 @@ async function enterApp() {
     if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status === 'approved') loadScript('calls.js');
     updateHeader(); loadModules();
     const last = localStorage.getItem('fendyx_last_section');
-    const valid = last && LOADERS[last] && ((last !== 'delivery' || currentProfile.role === 'delivery') && (last !== 'girls' || currentProfile.role !== 'remote_worker') && (last !== 'kyc' || currentProfile.role === 'remote_worker') && (last !== 'admin' || currentProfile.role === 'admin'));
+    const valid = last && LOADERS[last] && ((last !== 'delivery' || currentProfile.role === 'delivery') && (last !== 'girls' || currentProfile.role !== 'remote_worker') && (last !== 'remote' || currentProfile.role === 'remote_worker') && (last !== 'kyc' || currentProfile.role === 'remote_worker') && (last !== 'admin' || currentProfile.role === 'admin'));
     showSection(valid ? last : 'dashboard');
     startRealtime();
   } catch (e) { console.error(e); showToast('⚠️ Error de carga: ' + e.message); }
@@ -190,18 +190,23 @@ function toggleUserMenu() { document.getElementById('userMenu').classList.toggle
 document.addEventListener('click', e => { if (!e.target.closest('.user-avatar') && !e.target.closest('.user-menu')) document.getElementById('userMenu')?.classList.add('hidden'); });
 async function handleLogout() { if (shareTimer) clearInterval(shareTimer); sharing = false; localStorage.removeItem('fendyx_last_section'); await db.auth.signOut(); location.replace('index.html'); }
 
+// SIN DUPLICADOS: Trabajo Remoto SOLO para la trabajadora; Videollamada con chicas para el resto
 function loadModules() {
   const mods = [
     { id: 'map', icon: '📍', n: 'Mapa Social' }, { id: 'radar', icon: '🌙', n: 'Radar Nocturno' },
     { id: 'events', icon: '🎪', n: 'Eventos' }, { id: 'restaurants', icon: '🍽️', n: 'Restaurantes' },
     { id: 'reservations', icon: '📅', n: 'Reservas' }, { id: 'orders', icon: '📦', n: 'Pedidos' },
-    { id: 'remote', icon: '💼', n: 'Trabajo Remoto' }, { id: 'marketplace', icon: '🛒', n: 'Marketplace' },
-    { id: 'chat', icon: '💬', n: 'Chat' }, { id: 'tokens', icon: '◈', n: 'Tokens' },
-    { id: 'profile', icon: '👤', n: 'Mi Perfil' }, { id: 'profileedit', icon: '✏️', n: 'Perfil Pro' }
+    { id: 'marketplace', icon: '🛒', n: 'Marketplace' }, { id: 'chat', icon: '💬', n: 'Chat' },
+    { id: 'tokens', icon: '◈', n: 'Tokens' }, { id: 'profile', icon: '👤', n: 'Mi Perfil' },
+    { id: 'profileedit', icon: '✏️', n: 'Perfil Pro' }
   ];
-  if (currentProfile.role !== 'remote_worker') mods.splice(2, 0, { id: 'girls', icon: '💃', n: 'Videollamada con chicas' });
-  if (currentProfile.role === 'remote_worker' && currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', icon: '🪪', n: 'Mi Verificación' });
-  if (currentProfile.role === 'delivery') mods.splice(7, 0, { id: 'delivery', icon: '🛵', n: 'Zona Domiciliario' });
+  if (currentProfile.role === 'remote_worker') {
+    if (currentProfile.kyc_status !== 'approved') mods.unshift({ id: 'kyc', icon: '🪪', n: 'Mi Verificación' });
+    mods.splice(6, 0, { id: 'remote', icon: '💼', n: 'Trabajo Remoto' });
+  } else {
+    mods.splice(2, 0, { id: 'girls', icon: '💃', n: 'Videollamada con chicas' });
+  }
+  if (currentProfile.role === 'delivery') mods.push({ id: 'delivery', icon: '🛵', n: 'Zona Domiciliario' });
   if (currentProfile.role === 'admin') mods.unshift({ id: 'admin', icon: '🛡️', n: 'Panel Admin' });
   document.getElementById('modulesGrid').innerHTML = mods.map(m => `<div class="module-card" onclick="showSection('${m.id}')"><span class="icon">${m.icon}</span><h3>${m.n}</h3></div>`).join('');
 }
@@ -271,12 +276,10 @@ function startRealtime() {
   liveChannel = db.channel('fendyx-live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => { if (typeof onMessageRealtime === 'function') onMessageRealtime(p.new); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'panic_alerts' }, () => { if (currentProfile.role === 'admin') { showToast('🆘 ¡ALERTA DE PÁNICO!'); navigator.vibrate?.([300, 100, 300]); } })
-    // NIVELES / TARIFAS EN TIEMPO REAL EN TODOS LOS APARTADOS
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'role_details' }, p => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'role_details' }, () => {
       if (typeof loadGirls === 'function' && document.getElementById('section-girls')?.classList.contains('active')) loadGirls();
       if (typeof loadWorkers === 'function' && document.getElementById('section-remote')?.classList.contains('active')) loadWorkers();
       if (typeof loadWorkersAdmin === 'function' && document.getElementById('admin-workers')?.classList.contains('active')) loadWorkersAdmin();
-      if (p.new && p.new.user_id === currentUser.id && typeof loadWorkers === 'function') loadWorkers();
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, p => {
       if (p.new.id === currentUser.id) loadProfile().then(() => { updateHeader(); if (document.getElementById('section-tokens')?.classList.contains('active')) loadTransactions?.(); });

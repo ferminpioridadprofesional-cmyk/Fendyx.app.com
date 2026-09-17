@@ -14,16 +14,15 @@ function injectGirlStyle() {
   document.head.appendChild(st);
 }
 function girlCard(w) {
-  const rd = w.role_details?.[0];
-  const lvNum = Math.min(5, Math.max(1, parseInt(rd?.worker_level) || 1));
-  const rate = (rd?.rate_per_minute != null ? rd.rate_per_minute : levelInfo(lvNum).rate);
-  const displayName = w.model_name || w.full_name;
+  const lvNum = Math.min(5, Math.max(1, parseInt(w.worker_level) || 1));
+  const rate = parseFloat(w.rate_per_minute) || levelInfo(lvNum).rate;
+  const name = w.display_name || 'Modelo';
   const mainPhoto = w.avatar_url || (w.gallery_urls || [])[0] || '';
   const gallery = (w.gallery_urls || []).slice(0, 5);
   return `<div class="card-item girl-card tier-${lvNum}">
-    <div class="girl-photo" onclick="openProfile('${w.id}')">${mainPhoto ? `<img src="${mainPhoto}" alt="">` : `<span class="girl-initial">${(displayName || '?').charAt(0).toUpperCase()}</span>`}</div>
+    <div class="girl-photo" onclick="openProfile('${w.id}')">${mainPhoto ? `<img src="${mainPhoto}" alt="">` : `<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
     ${gallery.length ? `<div class="girl-thumbs">${gallery.map(g => `<img src="${g}" alt="" onclick="event.stopPropagation();openProfile('${w.id}')">`).join('')}</div>` : ''}
-    <div class="girl-head"><div class="card-title" style="margin:0">${displayName || '—'}${w.age ? ', ' + w.age : ''}</div>${levelBadge(lvNum)}</div>
+    <div class="girl-head"><div class="card-title" style="margin:0">${name}${w.age ? ', ' + w.age : ''}</div>${levelBadge(lvNum)}</div>
     <span class="status-pill ${w.is_online ? 'online' : 'offline'}">${w.is_online ? 'EN LÍNEA' : 'DESCONECTADA'}</span>
     <span class="role-badge">◈ ${rate}/min</span> ${w.zodiac ? `<span class="chip">${w.zodiac}</span>` : ''}
     <div class="card-desc">${w.occupation || ''}</div>
@@ -34,11 +33,16 @@ function girlCard(w) {
     </div>
   </div>`;
 }
+async function fetchPublicWorkers() {
+  const { data, error } = await db.rpc('get_public_workers');
+  if (error) { showToast('❌ ' + error.message); return []; }
+  return (typeof data === 'string' ? JSON.parse(data) : data) || [];
+}
 async function loadGirls() {
   if (!requireActive()) return;
   injectGirlStyle();
-  const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').order('is_online', { ascending: false });
-  document.getElementById('girlsGrid').innerHTML = (data || []).map(girlCard).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
+  const list = await fetchPublicWorkers();
+  document.getElementById('girlsGrid').innerHTML = list.map(girlCard).join('') || '<p class="empty-state">No hay chicas verificadas en línea</p>';
 }
 async function loadWorkers() {
   const isWorker = currentProfile.role === 'remote_worker';
@@ -59,8 +63,8 @@ async function loadWorkers() {
   injectGirlStyle();
   grid.style.display = '';
   panel.classList.add('hidden');
-  const { data } = await db.from('profiles').select('*, role_details(*)').eq('role', 'remote_worker').eq('kyc_status', 'approved').neq('id', currentUser.id);
-  grid.innerHTML = (data || []).map(girlCard).join('') || '<p class="empty-state">Sin trabajadoras</p>';
+  const list = await fetchPublicWorkers();
+  grid.innerHTML = list.map(girlCard).join('') || '<p class="empty-state">Sin trabajadoras</p>';
 }
 async function saveWorkerProfile(e) {
   e.preventDefault();

@@ -1,5 +1,5 @@
 'use strict';
-let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;let _girlTab=1;
+let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;let _girlTab=1;let _adultTab='girls';
 const DEFAULT_GIRL_CATS=[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
 const _we={interests:new Set(),preferences:new Set(),zodiac:null};
 function girlCats(){return window._girlCategories||DEFAULT_GIRL_CATS;}
@@ -8,16 +8,27 @@ function isNewGirl(created){if(!created)return false;return (Date.now()-new Date
 function toggleWChip(el,g,v){const s=_we[g];if(s.has(v)){s.delete(v);el.classList.remove('active');}else{s.add(v);el.classList.add('active');}}
 function pickWZodiac(el,v){_we.zodiac=v;document.querySelectorAll('.wz-chip').forEach(z=>z.classList.remove('active'));el.classList.add('active');}
 function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))return;const st=document.createElement('style');st.id='fendyx-girl-style';st.textContent=`
- .girl-card{padding:14px;position:relative}
- .new-tag{position:absolute;top:8px;left:8px;background:var(--success);color:#042;font-weight:900;font-size:.7rem;padding:3px 10px;border-radius:999px;box-shadow:0 0 10px rgba(0,255,157,.6);animation:lvlGlow 1.5s infinite;z-index:2}
+ @keyframes gFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+ @keyframes gShine{0%{background-position:-200% 0}100%{background-position:200% 0}}
+ @keyframes gPulse{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.4)}50%{box-shadow:0 0 16px rgba(0,255,157,.8)}}
+ .girl-card{padding:14px;position:relative;transition:transform .18s ease,box-shadow .18s ease}
+ .girl-card:hover{transform:translateY(-4px);box-shadow:0 10px 26px rgba(0,0,0,.45)}
+ .new-tag{position:absolute;top:8px;left:8px;background:linear-gradient(100deg,#00ff9d,#00d9ff);color:#042;font-weight:900;font-size:.7rem;padding:4px 12px;border-radius:999px;animation:gPulse 1.6s infinite;z-index:2;letter-spacing:1px}
+ .adult-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+ .adult-tab{position:relative;padding:10px 18px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:800;font-size:.9rem;overflow:hidden;transition:all .2s}
+ .adult-tab:hover{transform:translateY(-2px);border-color:var(--primary)}
+ .adult-tab.on{background:linear-gradient(100deg,#ff2d95,#7b2bff,#00d9ff);background-size:200%;color:#fff;border-color:transparent;animation:gShine 2.5s linear infinite;box-shadow:0 0 16px rgba(255,45,149,.5)}
  .cat-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
- .cat-tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:700;font-size:.85rem}
- .cat-tab.on{background:var(--gradient);color:#04060c;border-color:transparent}
+ .cat-tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:700;font-size:.85rem;transition:all .2s}
+ .cat-tab:hover{transform:translateY(-2px)}
+ .cat-tab.on{background:var(--gradient);color:#04060c;border-color:transparent;box-shadow:0 0 12px rgba(0,217,255,.4)}
  .girl-photo{width:64%;max-width:210px;height:170px;margin:0 auto;border-radius:14px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
- .girl-photo img{width:100%;height:100%;object-fit:contain;object-position:center}
+ .girl-photo img{width:100%;height:100%;object-fit:contain;object-position:center;transition:transform .25s}
+ .girl-card:hover .girl-photo img{transform:scale(1.05)}
  .girl-initial{font-size:3rem;color:var(--dim)}
  .girl-thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;justify-content:center}
- .girl-thumbs img{width:52px;height:52px;object-fit:cover;object-position:center;border-radius:9px;border:1px solid var(--border);cursor:pointer}
+ .girl-thumbs img{width:52px;height:52px;object-fit:cover;object-position:center;border-radius:9px;border:1px solid var(--border);cursor:pointer;transition:transform .15s}
+ .girl-thumbs img:hover{transform:scale(1.12)}
  .girl-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
  .pf-hero{display:flex;gap:14px;align-items:center;margin-bottom:12px;position:relative}
  .pf-hero img,.pf-hero-letter{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:pointer}
@@ -25,7 +36,8 @@ function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))retur
  .pf-meta{flex:1;text-align:left}
  .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
  .pf-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
- .pf-gallery img{width:100%;height:96px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer}
+ .pf-gallery img{width:100%;height:96px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer;transition:transform .18s}
+ .pf-gallery img:hover{transform:scale(1.06)}
  .wk-card{padding:18px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:center}
  .wk-name{font-family:'Orbitron';font-weight:900;font-size:1.3rem;margin-bottom:8px}
  .wk-row{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
@@ -38,9 +50,8 @@ function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))retur
  .wk-switch input{opacity:0;width:0;height:0}
  .wk-slider{position:absolute;inset:0;border-radius:999px;background:rgba(255,59,107,.25);border:1px solid var(--error);transition:.3s;cursor:pointer}
  .wk-slider:before{content:'';position:absolute;width:26px;height:26px;left:3px;top:2px;border-radius:50%;background:var(--error);transition:.3s;box-shadow:0 0 10px rgba(255,59,107,.6)}
- .wk-switch input:checked + .wk-slider{background:rgba(0,255,157,.2);border-color:var(--success);animation:switchGlow 1.6s infinite}
+ .wk-switch input:checked + .wk-slider{background:rgba(0,255,157,.2);border-color:var(--success);animation:gPulse 1.6s infinite}
  .wk-switch input:checked + .wk-slider:before{transform:translateX(32px);background:var(--success);box-shadow:0 0 14px rgba(0,255,157,.8)}
- @keyframes switchGlow{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.3)}50%{box-shadow:0 0 18px rgba(0,255,157,.7)}}
  .wk-pro{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:12px}`;document.head.appendChild(st);}
 function ensureWkLightbox(){if(document.getElementById('wkLightbox'))return;const lb=document.createElement('div');lb.id='wkLightbox';lb.className='lb-wrap hidden';document.body.appendChild(lb);lb.addEventListener('touchstart',e=>{wkLbX=e.touches[0].clientX;});lb.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-wkLbX;if(dx>50)wkLbStep(-1);else if(dx<-50)wkLbStep(1);});}
 function wkOpenLightbox(urls,idx){ensureWkLightbox();wkLbUrls=urls||[];wkLbIdx=idx||0;const lb=document.getElementById('wkLightbox');lb.innerHTML=`<button class="lb-close" onclick="wkCloseLightbox()">✕</button><button class="lb-btn lb-prev" onclick="wkLbStep(-1)">‹</button><img src="${wkLbUrls[wkLbIdx]||''}"><button class="lb-btn lb-next" onclick="wkLbStep(1)">›</button><div class="lb-dots">${wkLbUrls.map((_,i)=>`<span class="${i===wkLbIdx?'on':''}"></span>`).join('')}</div>`;lb.classList.remove('hidden');}
@@ -71,7 +82,28 @@ function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_lev
 async function fetchPublicWorkers(){const{data,error}=await db.rpc('get_public_workers');if(error){showToast('❌ '+error.message);return[];}return (typeof data==='string'?JSON.parse(data):data)||[];}
 function setGirlTab(n){_girlTab=n;renderGirlsGrid();}
 function renderGirlsGrid(){const grid=document.getElementById('girlsGrid');const cats=girlCats();const tabsEl=document.getElementById('girlCatTabs');if(tabsEl)tabsEl.innerHTML=cats.map(c=>`<button class="cat-tab ${_girlTab===c.id?'on':''}" onclick="setGirlTab(${c.id})">${c.name}</button>`).join('');const list=_girlsList.filter(w=>(w.girl_category||1)===_girlTab);grid.innerHTML=list.map(w=>girlCard(w,_girlsList.indexOf(w))).join('')||'<p class="empty-state">No hay chicas en esta categoría</p>';}
-async function loadGirls(){injectGirlStyle();await loadGirlCats();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');let tabsEl=document.getElementById('girlCatTabs');if(!tabsEl){tabsEl=document.createElement('div');tabsEl.id='girlCatTabs';tabsEl.className='cat-tabs';grid.parentNode.insertBefore(tabsEl,grid);}const isAdmin=currentProfile.role==='admin';const bal=parseFloat(currentProfile.tokens_balance||0);const kycOk=currentProfile.kyc_status==='approved';const moneyOk=bal>=1||currentProfile.unlimited_tokens;if(!isAdmin&&!(kycOk&&moneyOk)){grid.innerHTML='';tabsEl.innerHTML='';gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;return;}gate.innerHTML='';_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
+async function loadGirls(){injectGirlStyle();await loadGirlCats();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');if(gate)gate.innerHTML='';_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
+// ===== ÁREA ADULTOS +18 =====
+const ADULT_NAMES={girls:'💃 Chicas',map:'📍 Mapa',radar:'🌙 Radar',chat:'💬 Chat',events:'🎪 Eventos',marketplace:'🛒 Market',restaurants:'🍽️ Restaurantes',orders:'📦 Pedidos'};
+function setAdultTab(m){_adultTab=m;if(m!=='girls'){showSection(m);return;}loadAdults();}
+async function loadAdults(){
+  injectGirlStyle();
+  const gate=document.getElementById('adultsGate');const tabsEl=document.getElementById('adultTabs');
+  const ok=currentProfile.role==='admin'||currentProfile.kyc_status==='approved';
+  if(!ok){
+    if(gate)gate.innerHTML=`<div class="req-gate"><h3>🔞 Área exclusiva para adultos verificados</h3><p class="dim">Debes completar tu <b>verificación de identidad (KYC)</b> para entrar.</p><div class="row-buttons" style="justify-content:center"><button class="btn-primary" onclick="showSection('profile')">🪪 Verificarme ahora</button></div></div>`;
+    if(tabsEl)tabsEl.innerHTML='';
+    const g=document.getElementById('girlsGrid');if(g)g.innerHTML='';
+    const gc=document.getElementById('girlCatTabs');if(gc)gc.innerHTML='';
+    return;
+  }
+  if(gate)gate.innerHTML='';
+  const mods=window._adultModules||['girls'];
+  if(!mods.includes(_adultTab))_adultTab='girls';
+  if(tabsEl)tabsEl.innerHTML=mods.map(m=>`<button class="adult-tab ${_adultTab===m?'on':''}" onclick="setAdultTab('${m}')">${ADULT_NAMES[m]||m}</button>`).join('');
+  if(_adultTab==='girls'){await loadGirls();}
+  else{showSection(_adultTab);}
+}
 async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker';const grid=document.getElementById('workersGrid');const panel=document.getElementById('workerPanel');
  if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;pmInit('pmWorker',(p.worker_gallery||[]),5);
   const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
@@ -92,7 +124,7 @@ async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker
     <button type="submit" class="btn-primary">💾 Guardar Perfil de Modelo</button></form></div></div>`;
   pmRender('pmWorker');
   return;}
- injectGirlStyle();grid.style.display='';panel.classList.add('hidden');_girlsList=await fetchPublicWorkers();grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">Sin trabajadoras</p>';}
+ injectGirlStyle();grid.style.display='';panel.classList.add('hidden');_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
 async function saveWorkerPro(e){e.preventDefault();const p=currentProfile;const up={model_name:document.getElementById('wpModel').value.trim(),bio:document.getElementById('wpBio').value,interests:Array.from(_we.interests),preferences:Array.from(_we.preferences),zodiac:_we.zodiac};const g=pmState('pmWorker');let gallery=[...g.kept];for(const f of g.newFiles){if(gallery.length>=5)break;const path='wgallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)gallery.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}up.worker_gallery=gallery.slice(0,5);await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();loadWorkers();showToast('✅ Perfil de Modelo guardado');}
 async function setWorkerOnline(on){localStorage.setItem('fendyx_online_intent',on?'1':'0');await setWorkerOnlineDB(on);const st=document.getElementById('wkState');if(st){st.className='wk-state '+(on?'on':'off');st.textContent=on?'🟢 EN LÍNEA':'🔴 DESCONECTADA';}showToast(on?'🟢 En línea: te pueden llamar':'🔴 Desconectada');}
 function fillKycForm(){const p=currentProfile;const box=document.getElementById('kycStatusBox');const st={none:'⚪ No aplica',pending:'⏳ Pendiente',approved:'✅ Verificada',rejected:'❌ Rechazada: '+(p.kyc_note||'')}[p.kyc_status]||'⚪';box.innerHTML=`<h3>Verificación</h3><p>${st}</p><p class="dim">Real: <b>${p.full_name||'—'}</b> · Artístico: <b>${p.model_name||'—'}</b></p>${p.id_card_url?`<img class="kyc-img" src="${p.id_card_url}">`:''}${p.face_photo_url?`<img class="kyc-img" src="${p.face_photo_url}">`:''}`;document.getElementById('kycWhatsapp').value=p.whatsapp||'';}

@@ -1,10 +1,17 @@
 'use strict';
-let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;
+let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;let _girlTab=1;
+const DEFAULT_GIRL_CATS=[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
 const _we={interests:new Set(),preferences:new Set(),zodiac:null};
+function girlCats(){return window._girlCategories||DEFAULT_GIRL_CATS;}
+function isNewGirl(created){if(!created)return false;const ms=Date.now()-new Date(created).getTime();return ms<=3*24*60*60*1000;}
 function toggleWChip(el,g,v){const s=_we[g];if(s.has(v)){s.delete(v);el.classList.remove('active');}else{s.add(v);el.classList.add('active');}}
 function pickWZodiac(el,v){_we.zodiac=v;document.querySelectorAll('.wz-chip').forEach(z=>z.classList.remove('active'));el.classList.add('active');}
 function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))return;const st=document.createElement('style');st.id='fendyx-girl-style';st.textContent=`
- .girl-card{padding:14px}
+ .girl-card{padding:14px;position:relative}
+ .new-tag{position:absolute;top:8px;left:8px;background:var(--success);color:#042;font-weight:900;font-size:.7rem;padding:3px 10px;border-radius:999px;box-shadow:0 0 10px rgba(0,255,157,.6);animation:lvlGlow 1.5s infinite;z-index:2}
+ .cat-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+ .cat-tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:700;font-size:.85rem}
+ .cat-tab.on{background:var(--gradient);color:#04060c;border-color:transparent}
  .girl-photo{width:64%;max-width:210px;height:170px;margin:0 auto;border-radius:14px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
  .girl-photo img{width:100%;height:100%;object-fit:contain;object-position:center}
  .girl-initial{font-size:3rem;color:var(--dim)}
@@ -40,9 +47,9 @@ function wkLbStep(d){wkLbIdx=(wkLbIdx+d+wkLbUrls.length)%wkLbUrls.length;wkOpenL
 function wkCloseLightbox(){document.getElementById('wkLightbox')?.classList.add('hidden');}
 function ensureWkModal(){if(document.getElementById('wkProfileModal'))return;const m=document.createElement('div');m.id='wkProfileModal';m.className='modal hidden';m.innerHTML=`<div class="modal-content wide" id="wkModalContent"></div>`;document.body.appendChild(m);}
 function renderWkProfile(data,preview){ensureWkModal();injectGirlStyle();const rd=data.role_details?.[0];const lv=Math.min(5,Math.max(1,parseInt(rd?.worker_level)||1));const net=rd?.rate_per_minute!=null?rd.rate_per_minute:levelInfo(lv).rate;const shown=preview?net:net*2;const name=data.model_name||'Modelo';const photos=(data.worker_gallery||[]).slice(0,5);const box=document.getElementById('wkModalContent');box.className='modal-content wide tier-'+lv;box.innerHTML=`
- <div class="modal-head"><h3>${name}</h3><button class="modal-close" onclick="closeModal('wkProfileModal')">✕</button></div>
+ <div class="modal-head"><h3>${name} ${isNewGirl(data.created_at)?'<span class="new-tag">NEW</span>':''}</h3><button class="modal-close" onclick="closeModal('wkProfileModal')">✕</button></div>
  <div class="pf-hero">${(data.avatar_url||photos[0])?`<img src="${data.avatar_url||photos[0]}" onclick='wkOpenLightbox(${JSON.stringify(photos.length?photos:[data.avatar_url])},0)'>`:`<div class="pf-hero-letter">${name.charAt(0).toUpperCase()}</div>`}
-  <div class="pf-meta"><b>${name}${data.age?' · '+data.age:''}</b>${levelBadge(lv)}<div style="margin-top:6px">◈ ${shown}/min · ${stars(data.rating||5)}</div>${data.zodiac?`<div class="dim">${data.zodiac}</div>`:''}</div></div>
+  <div class="pf-meta"><b>${name}${data.age?' · '+data.age:''}</b>${levelBadge(lv)} <span class="dim">⭐ ${parseFloat(data.rating||5).toFixed(1)}</span><div style="margin-top:6px">◈ ${shown}/min</div>${data.zodiac?`<div class="dim">${data.zodiac}</div>`:''}</div></div>
  <p class="dim">${data.bio||rd?.bio||''}</p>
  <div class="chips-row">${(data.interests||[]).map(i=>`<span class="chip active">🎯 ${i}</span>`).join('')}${(data.preferences||[]).map(i=>`<span class="chip">💫 ${i}</span>`).join('')}</div>
  <h4 class="sub-title">📸 Galería</h4><div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='wkOpenLightbox(${JSON.stringify(photos)},${i})'>`).join('')||'<p class="dim">Sin fotos</p>'}</div>
@@ -52,18 +59,21 @@ async function openWorkerProfile(id){await window._rwRenderProfile(id,false);}
 async function previewWorkerProfile(){await window._rwRenderProfile(currentUser.id,true);}
 async function openGirlGallery(idx,i){const g=(_girlsList[idx]?.gallery)||[];if(!g.length)return;wkOpenLightbox(g,i);}
 function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_level)||1));const clientRate=parseFloat(w.client_rate)||2;const name=w.display_name||'Modelo';const gallery=w.gallery||[];const mainPhoto=w.avatar_url||gallery[0]||'';return `<div class="card-item girl-card tier-${lvNum}">
+ ${isNewGirl(w.created_at)?'<span class="new-tag">NEW</span>':''}
  <div class="girl-photo" onclick="openGirlGallery(${idx},0)">${mainPhoto?`<img src="${mainPhoto}" alt="">`:`<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
  ${gallery.length?`<div class="girl-thumbs">${gallery.map((g,i)=>`<img src="${g}" alt="" onclick="openGirlGallery(${idx},${i})">`).join('')}</div>`:''}
  <div class="girl-head"><div class="card-title" style="margin:0">${name}${w.age?', '+w.age:''}</div>${levelBadge(lvNum)}</div>
  <span class="status-pill ${w.is_online?'online':'offline'}">${w.is_online?'EN LÍNEA':'DESCONECTADA'}</span>
- <span class="role-badge">◈ ${clientRate}/min</span> ${w.zodiac?`<span class="chip">${w.zodiac}</span>`:''}
+ <span class="role-badge">◈ ${clientRate}/min</span> <span class="dim">⭐ ${parseFloat(w.rating||5).toFixed(1)}</span>
  <div class="chips-row" style="margin:6px 0">${(w.interests||[]).slice(0,3).map(i=>`<span class="chip">🎯 ${i}</span>`).join('')}</div>
- <div class="row-actions"><button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button><button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹 Llamar</button></div></div>`;}
+ <div class="row-actions"><button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil</button><button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹 Llamar</button></div></div>`;}
 async function fetchPublicWorkers(){const{data,error}=await db.rpc('get_public_workers');if(error){showToast('❌ '+error.message);return[];}return (typeof data==='string'?JSON.parse(data):data)||[];}
-async function loadGirls(){injectGirlStyle();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');const isAdmin=currentProfile.role==='admin';const bal=parseFloat(currentProfile.tokens_balance||0);const kycOk=currentProfile.kyc_status==='approved';const moneyOk=bal>=1||currentProfile.unlimited_tokens;if(!isAdmin&&!(kycOk&&moneyOk)){grid.innerHTML='';gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;return;}gate.innerHTML='';_girlsList=await fetchPublicWorkers();grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">No hay chicas verificadas en línea</p>';}
+function setGirlTab(n){_girlTab=n;renderGirlsGrid();}
+function renderGirlsGrid(){const grid=document.getElementById('girlsGrid');const cats=girlCats();const tabsEl=document.getElementById('girlCatTabs');if(tabsEl)tabsEl.innerHTML=cats.map(c=>`<button class="cat-tab ${_girlTab===c.id?'on':''}" onclick="setGirlTab(${c.id})">${c.name}</button>`).join('');const list=_girlsList.filter(w=>(w.girl_category||1)===_girlTab);grid.innerHTML=list.map((w)=>girlCard(w,_girlsList.indexOf(w))).join('')||'<p class="empty-state">No hay chicas en esta categoría</p>';}
+async function loadGirls(){injectGirlStyle();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');let tabsEl=document.getElementById('girlCatTabs');if(!tabsEl){tabsEl=document.createElement('div');tabsEl.id='girlCatTabs';tabsEl.className='cat-tabs';grid.parentNode.insertBefore(tabsEl,grid);}const isAdmin=currentProfile.role==='admin';const bal=parseFloat(currentProfile.tokens_balance||0);const kycOk=currentProfile.kyc_status==='approved';const moneyOk=bal>=1||currentProfile.unlimited_tokens;if(!isAdmin&&!(kycOk&&moneyOk)){grid.innerHTML='';tabsEl.innerHTML='';gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;return;}gate.innerHTML='';_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
 async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker';const grid=document.getElementById('workersGrid');const panel=document.getElementById('workerPanel');
  if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;pmInit('pmWorker',(p.worker_gallery||[]),5);
-  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
   panel.innerHTML=`<h3>💼 Mi Trabajo</h3><div class="wk-card tier-${lvNum}">
    <div class="wk-name">🎭 ${p.model_name||'Modelo'}</div>
    <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">TU ganancia: ◈ ${net}/min</span></div>

@@ -13,7 +13,8 @@ function injectProfileStyle(){if(document.getElementById('fendyx-profile-style')
  .pf-hero img,.pf-hero-letter{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0}
  .pf-hero-letter{background:var(--gradient);color:#04060c;display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:900}
  .pf-meta{flex:1;text-align:left}
- .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}`;document.head.appendChild(st);}
+ .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
+ .vip-box{text-align:center;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);margin:10px 0}`;document.head.appendChild(st);}
 let _lbUrls=[],_lbIdx=0,_lbX=0;
 function openLightbox(urls,idx){_lbUrls=urls||[];_lbIdx=idx||0;let lb=document.getElementById('lbWrap');if(!lb){lb=document.createElement('div');lb.id='lbWrap';lb.className='lb-wrap';document.body.appendChild(lb);lb.addEventListener('touchstart',e=>{_lbX=e.touches[0].clientX;});lb.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-_lbX;if(dx>50)lbStep(-1);else if(dx<-50)lbStep(1);});}lb.innerHTML=`<button class="lb-close" onclick="closeLightbox()">✕</button><button class="lb-btn lb-prev" onclick="lbStep(-1)">‹</button><img src="${_lbUrls[_lbIdx]||''}"><button class="lb-btn lb-next" onclick="lbStep(1)">›</button><div class="lb-dots">${_lbUrls.map((_,i)=>`<span class="${i===_lbIdx?'on':''}"></span>`).join('')}</div>`;lb.classList.remove('hidden');}
 function lbStep(d){_lbIdx=(_lbIdx+d+_lbUrls.length)%_lbUrls.length;openLightbox(_lbUrls,_lbIdx);}
@@ -31,6 +32,11 @@ async function loadProfileSection(){
   const img=document.getElementById('profileAvatarImg');
   if(p.avatar_url){img.src=p.avatar_url;img.style.display='block';document.getElementById('profileAvatar').style.display='none';}
   const sec=document.getElementById('section-profile');
+  // Badge VIP + progreso
+  let vip=document.getElementById('profileVipBox');if(!vip){vip=document.createElement('div');vip.id='profileVipBox';sec.appendChild(vip);}
+  const bal=parseFloat(p.tokens_balance||0);
+  const nxt=userNextLevel(bal);
+  vip.innerHTML=`<div class="vip-box">${userLevelBadge(bal)}${nxt?`<p class="dim" style="margin-top:8px">Recarga <b>◈ ${(nxt.min-bal).toFixed(2)}</b> más para alcanzar <b>🎭 ${nxt.name}</b></p>`:'<p class="dim" style="margin-top:8px">🏆 Nivel máximo alcanzado</p>'}</div>`;
   let gal=document.getElementById('profileNormalGallery');if(!gal){gal=document.createElement('div');gal.id='profileNormalGallery';sec.appendChild(gal);}
   const photos=(p.gallery_urls||[]).slice(0,3);
   gal.innerHTML=`<h4 class="sub-title">📸 Mis fotos (máx 3)</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='openLightbox(${JSON.stringify(photos)},${i})'>`).join('')}</div>`:'<p class="dim">Sin fotos aún</p>'}`;
@@ -83,7 +89,7 @@ async function viewUserProfile(userId){
   document.getElementById('upName').textContent=displayName;
   const mc=document.querySelector('#modal-userprofile .modal-content');if(mc)mc.className='modal-content wide';
   const hero=document.querySelector('#modal-userprofile .pf-hero')||document.querySelector('#modal-userprofile .up-hero');
-  if(hero)hero.outerHTML=`<div class="pf-hero">${data.avatar_url?`<img src="${data.avatar_url}" onclick='openLightbox(${JSON.stringify([data.avatar_url,...photos])},0)'>`:`<div class="pf-hero-letter">${displayName.charAt(0).toUpperCase()}</div>`}<div class="pf-meta"><b>${displayName}${data.age?' · '+data.age+' años':''}</b><span class="role-badge">${ROLE_LABELS[data.role==='remote_worker'?'user':data.role]||'Usuario'}</span><div style="margin-top:6px">${stars(data.rating||5)} ${parseFloat(data.rating||5).toFixed(1)}</div>${data.occupation?`<div class="dim" style="margin-top:4px">${data.occupation}</div>`:''}</div></div>`;
+  if(hero)hero.outerHTML=`<div class="pf-hero">${data.avatar_url?`<img src="${data.avatar_url}" onclick='openLightbox(${JSON.stringify([data.avatar_url,...photos])},0)'>`:`<div class="pf-hero-letter">${displayName.charAt(0).toUpperCase()}</div>`}<div class="pf-meta"><b>${displayName}${data.age?' · '+data.age+' años':''}</b><span class="role-badge">${ROLE_LABELS[data.role==='remote_worker'?'user':data.role]||'Usuario'}</span> ${userLevelBadge(data.tokens_balance)}<div style="margin-top:6px">${stars(data.rating||5)} ${parseFloat(data.rating||5).toFixed(1)}</div>${data.occupation?`<div class="dim" style="margin-top:4px">${data.occupation}</div>`:''}</div></div>`;
   document.getElementById('upVerified').innerHTML='';
   document.getElementById('upRating').textContent=stars(data.rating||5)+' '+parseFloat(data.rating||5).toFixed(1);
   document.getElementById('upBio').innerHTML=data.bio||'Sin descripción.';

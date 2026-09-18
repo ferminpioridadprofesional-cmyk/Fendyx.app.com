@@ -1,34 +1,23 @@
 'use strict';
-let viewedUserId = null;
-let _pgKept = [], _pgNew = [], _pgRemoveAvatar = false;
-const INTERESTS = ['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
-const PREFERENCES = ['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
-const ZODIAC = ['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
-const _pe = { interests:new Set(), preferences:new Set(), zodiac:null };
+let viewedUserId=null;
+const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];
+const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];
+const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+const _pe={interests:new Set(),preferences:new Set(),zodiac:null};
 function toggleChip(el,g,v){const s=_pe[g];if(s.has(v)){s.delete(v);el.classList.remove('active');}else{s.add(v);el.classList.add('active');}}
 function pickZodiac(el,v){_pe.zodiac=v;document.querySelectorAll('.zodiac-chip').forEach(z=>z.classList.remove('active'));el.classList.add('active');}
 function injectProfileStyle(){if(document.getElementById('fendyx-profile-style'))return;const st=document.createElement('style');st.id='fendyx-profile-style';st.textContent=`
  .pf-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
- .pf-gallery img{width:100%;height:110px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer}
+ .pf-gallery img{width:100%;height:96px;object-fit:cover;object-position:center;border-radius:12px;border:1px solid var(--border);cursor:pointer}
  .pf-hero{display:flex;gap:14px;align-items:center;margin-bottom:12px;position:relative}
  .pf-hero img,.pf-hero-letter{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0}
  .pf-hero-letter{background:var(--gradient);color:#04060c;display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:900}
  .pf-meta{flex:1;text-align:left}
- .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}
- .thumbwrap{position:relative;display:inline-block;margin:4px}
- .thumbwrap img{width:80px;height:80px;object-fit:cover;border-radius:12px;border:1px solid var(--border)}
- .thumbwrap .del{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:none;background:var(--error);color:#fff;font-size:.8rem;cursor:pointer}`;document.head.appendChild(st);}
+ .pf-meta b{font-size:1.25rem;display:block;margin-bottom:4px}`;document.head.appendChild(st);}
 let _lbUrls=[],_lbIdx=0,_lbX=0;
 function openLightbox(urls,idx){_lbUrls=urls||[];_lbIdx=idx||0;let lb=document.getElementById('lbWrap');if(!lb){lb=document.createElement('div');lb.id='lbWrap';lb.className='lb-wrap';document.body.appendChild(lb);lb.addEventListener('touchstart',e=>{_lbX=e.touches[0].clientX;});lb.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-_lbX;if(dx>50)lbStep(-1);else if(dx<-50)lbStep(1);});}lb.innerHTML=`<button class="lb-close" onclick="closeLightbox()">✕</button><button class="lb-btn lb-prev" onclick="lbStep(-1)">‹</button><img src="${_lbUrls[_lbIdx]||''}"><button class="lb-btn lb-next" onclick="lbStep(1)">›</button><div class="lb-dots">${_lbUrls.map((_,i)=>`<span class="${i===_lbIdx?'on':''}"></span>`).join('')}</div>`;lb.classList.remove('hidden');}
 function lbStep(d){_lbIdx=(_lbIdx+d+_lbUrls.length)%_lbUrls.length;openLightbox(_lbUrls,_lbIdx);}
 function closeLightbox(){document.getElementById('lbWrap')?.classList.add('hidden');}
-
-// ===== Gestión de galería normal (máx 3) =====
-function pgRender(){const wrap=document.getElementById('proGalleryPrev');if(!wrap)return;const kept=_pgKept.map((u,i)=>`<span class="thumbwrap"><img src="${u}"><button type="button" class="del" onclick="pgRemoveKept(${i})">✕</button></span>`).join('');const nw=_pgNew.map((f,i)=>`<span class="thumbwrap"><img src="${URL.createObjectURL(f)}"><button type="button" class="del" onclick="pgRemoveNew(${i})">✕</button></span>`).join('');wrap.innerHTML=(kept+nw)||'<p class="dim">Sin fotos</p>';}
-function pgRemoveKept(i){_pgKept.splice(i,1);pgRender();}
-function pgRemoveNew(i){_pgNew.splice(i,1);pgRender();}
-function pgOnFiles(input){const files=Array.from(input.files||[]);for(const f of files){if(_pgKept.length+_pgNew.length>=3){showToast('⚠️ Máx 3 fotos');break;}_pgNew.push(f);}input.value='';pgRender();}
-function pgRemoveAvatar(){_pgRemoveAvatar=true;const p=document.getElementById('proAvatarPrev');if(p)p.innerHTML='<p class="dim">Foto de perfil eliminada (sube una nueva abajo)</p>';}
 
 async function loadProfileSection(){
   const p=currentProfile;
@@ -46,7 +35,7 @@ async function loadProfileSection(){
   const photos=(p.gallery_urls||[]).slice(0,3);
   gal.innerHTML=`<h4 class="sub-title">📸 Mis fotos (máx 3)</h4>${photos.length?`<div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='openLightbox(${JSON.stringify(photos)},${i})'>`).join('')}</div>`:'<p class="dim">Sin fotos aún</p>'}`;
   let kycBox=document.getElementById('profileKycBox');if(!kycBox){kycBox=document.createElement('div');kycBox.id='profileKycBox';sec.appendChild(kycBox);}
-  if(p.role!=='remote_worker'){kycBox.innerHTML=p.kyc_status==='approved'?`<div class="owner-panel"><h3>🪪 Verificación de identidad</h3><p style="color:var(--success)">✅ Verificado: puedes llamar modelos</p></div>`:`<div class="owner-panel"><h3>🪪 Verificación para llamar (+18)</h3><p class="dim">Sube cédula + foto de rostro sin filtros/gorra/gafas. Solo el admin las ve.</p><form class="owner-form" onsubmit="submitClientKyc(event)"><label class="dim">📄 Cédula</label><input type="file" id="ckId" accept="image/*" required><label class="dim">🤳 Rostro</label><input type="file" id="ckFace" accept="image/*" required><button type="submit" class="btn-primary">Enviar verificación</button></form></div>`;}
+  if(p.role!=='remote_worker'){kycBox.innerHTML=p.kyc_status==='approved'?`<div class="owner-panel"><h3>🪪 Verificación de identidad</h3><p style="color:var(--success)">✅ Verificado: puedes llamar modelos</p></div>`:`<div class="owner-panel"><h3>🪪 Verificación para llamar (+18)</h3><p class="dim">Sube cédula + foto de rostro sin filtros/gorra/gafas. Solo el admin las ve.</p><form class="owner-form" onsubmit="submitClientKyc(event)"><label class="dim">📄 Cédula</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar cédula</span><input type="file" id="ckId" accept="image/*" hidden required onchange="fbLabel(this)"></label><label class="dim">🤳 Rostro</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar rostro</span><input type="file" id="ckFace" accept="image/*" hidden required onchange="fbLabel(this)"></label><button type="submit" class="btn-primary">Enviar verificación</button></form></div>`;}
   else{kycBox.innerHTML=`<div class="owner-panel"><h3>🪪 Verificación</h3><p>${p.kyc_status==='approved'?'✅ Verificada':'⏳ Pendiente'}</p></div>`;}
   let actions=document.getElementById('profileActions');if(!actions){actions=document.createElement('div');actions.id='profileActions';actions.className='row-buttons';actions.style.marginTop='14px';sec.appendChild(actions);}
   actions.innerHTML=`<button class="btn-secondary half" onclick="showSection('profileedit')">✏️ Editar Perfil</button><button class="btn-secondary half" style="border-color:var(--error);color:var(--error)" onclick="handleLogout()">🚪 Cerrar Sesión</button>`;
@@ -56,31 +45,29 @@ async function submitClientKyc(e){e.preventDefault();const up={kyc_status:'pendi
 function fillProfilePro(){
   const p=currentProfile;
   _pe.interests=new Set(p.interests||[]);_pe.preferences=new Set(p.preferences||[]);_pe.zodiac=p.zodiac||null;
-  _pgKept=[...(p.gallery_urls||[])].slice(0,3);_pgNew=[];_pgRemoveAvatar=false;
+  pmInit('pmAvatar',p.avatar_url?[p.avatar_url]:[],1);
+  pmInit('pmNormal',(p.gallery_urls||[]),3);
   const form=document.querySelector('#section-profileedit form');
   form.innerHTML=`<h3>✏️ Editar Perfil (público)</h3>
-    <label class="dim">Foto de perfil</label>
-    <div id="proAvatarPrev">${p.avatar_url?`<span class="thumbwrap"><img src="${p.avatar_url}"><button type="button" class="del" onclick="pgRemoveAvatar()">✕</button></span>`:'<p class="dim">Sin foto de perfil</p>'}</div>
-    <input type="file" id="proAvatar" accept="image/*">
-    <label class="dim">Fotos públicas (máx 3) — toca ✕ para eliminar</label>
-    <div id="proGalleryPrev" class="pf-gallery"></div>
-    <input type="file" id="proGallery" accept="image/*" multiple onchange="pgOnFiles(this)">
+    <label class="dim">Foto de perfil</label><div id="pmAvatar" class="pm-grid"></div>
+    <label class="dim">Fotos públicas (máx 3)</label><div id="pmNormal" class="pm-grid"></div>
     <label class="dim">Nombre</label><input type="text" id="proName" value="${p.full_name||''}">
     <label class="dim">Edad</label><input type="number" id="proAge" min="18" max="100" value="${p.age||''}">
     <label class="dim">Ocupación</label><input type="text" id="proOccupation" value="${p.occupation||''}">
     <label class="dim">Descripción</label><textarea id="proBio" rows="3">${p.bio||''}</textarea>
     <button type="submit" class="btn-primary">Guardar</button>`;
-  pgRender();
+  pmRender('pmAvatar');pmRender('pmNormal');
 }
 async function saveProfilePro(e){
   e.preventDefault();
   const p=currentProfile;
   const up={full_name:document.getElementById('proName').value||p.full_name,age:parseInt(document.getElementById('proAge').value,10)||p.age,occupation:document.getElementById('proOccupation').value,bio:document.getElementById('proBio').value,interests:Array.from(_pe.interests),preferences:Array.from(_pe.preferences),zodiac:_pe.zodiac};
-  if(_pgRemoveAvatar)up.avatar_url=null;
-  const av=document.getElementById('proAvatar').files[0];
-  if(av){const path='avatars/'+currentUser.id+'_'+Date.now()+'.png';const r=await db.storage.from('fendyx-assets').upload(path,av);if(!r.error)up.avatar_url=db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl;}
-  let gallery=[..._pgKept];
-  for(const f of _pgNew){if(gallery.length>=3)break;const path='gallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)gallery.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}
+  const av=pmState('pmAvatar');
+  if(av.newFiles.length){const f=av.newFiles[0];const path='avatars/'+currentUser.id+'_'+Date.now()+'.png';const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)up.avatar_url=db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl;}
+  else if(av.kept.length===0){up.avatar_url=null;}
+  else{up.avatar_url=av.kept[0];}
+  const g=pmState('pmNormal');let gallery=[...g.kept];
+  for(const f of g.newFiles){if(gallery.length>=3)break;const path='gallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)gallery.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}
   up.gallery_urls=gallery.slice(0,3);
   await db.from('profiles').update(up).eq('id',currentUser.id);
   await loadProfile();updateHeader();loadProfileSection();fillProfilePro();

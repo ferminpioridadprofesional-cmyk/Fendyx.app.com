@@ -9,6 +9,18 @@ function levelInfo(n){return LEVEL_META[parseInt(n)]||LEVEL_META[1];}
 function levelBadge(n){const lv=Math.min(5,Math.max(1,parseInt(n)||1));const m=LEVEL_META[lv];return `<span class="lvl lvl-${lv}"><span class="lvl-ico">${m.ico}</span>${m.name}</span>`;}
 const MODULE_DEFS=[{id:'map',n:'Mapa Social'},{id:'radar',n:'Radar Nocturno'},{id:'events',n:'Eventos'},{id:'restaurants',n:'Restaurantes'},{id:'reservations',n:'Reservas'},{id:'orders',n:'Pedidos'},{id:'marketplace',n:'Marketplace'},{id:'girls',n:'Videollamada con chicas'},{id:'remote',n:'Trabajo'},{id:'delivery',n:'Zona Domiciliario'},{id:'chat',n:'Chat'}];
 const MODULE_ICONS={map:'📍',radar:'🌙',events:'🎪',restaurants:'🍽️',reservations:'📅',orders:'📦',marketplace:'🛒',girls:'💃',remote:'💼',delivery:'🛵',chat:'💬',tokens:'◈',admin:'🛡️',kyc:'🪪'};
+
+// ===== COMPONENTE DE FOTOS (mini-galería con reemplazar/eliminar) =====
+const _pm={};
+function pmInit(id,kept,max){_pm[id]={kept:(kept||[]).slice(0,max),newFiles:[],max};}
+function pmState(id){return _pm[id]||{kept:[],newFiles:[]};}
+function pmTile(id,kind,i,src){return `<span class="pm-tile"><img src="${src}" alt=""><span class="pm-actions"><button type="button" class="pm-btn" title="Reemplazar" onclick="pmReplace('${id}','${kind}',${i})">🔄</button><button type="button" class="pm-btn del" title="Eliminar" onclick="pmRemove('${id}','${kind}',${i})">✕</button></span></span>`;}
+function pmRender(id){const c=_pm[id];const el=document.getElementById(id);if(!el||!c)return;const kept=c.kept.map((u,i)=>pmTile(id,'kept',i,u)).join('');const nw=c.newFiles.map((f,i)=>pmTile(id,'new',i,URL.createObjectURL(f))).join('');const left=c.max-(c.kept.length+c.newFiles.length);const add=left>0?`<label class="pm-add" title="Añadir foto">＋<input type="file" accept="image/*" multiple hidden onchange="pmAdd('${id}',this)"></label>`:'';el.innerHTML=kept+nw+add;}
+function pmAdd(id,input){const c=_pm[id];if(!c)return;for(const f of Array.from(input.files||[])){if(c.kept.length+c.newFiles.length>=c.max){showToast('⚠️ Máximo '+c.max+' fotos');break;}c.newFiles.push(f);}input.value='';pmRender(id);}
+function pmRemove(id,kind,i){const c=_pm[id];if(!c)return;if(kind==='kept')c.kept.splice(i,1);else c.newFiles.splice(i,1);pmRender(id);}
+function pmReplace(id,kind,i){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=()=>{const f=inp.files[0];if(!f)return;const c=_pm[id];if(!c)return;if(kind==='kept'){c.kept.splice(i,1);c.newFiles.push(f);}else{c.newFiles[i]=f;}pmRender(id);};inp.click();}
+function fbLabel(input){const lb=input.closest('.file-btn');if(lb){const t=lb.querySelector('.fb-txt');if(t)t.textContent=input.files&&input.files[0]?input.files[0].name:'Seleccionar archivo';}}
+
 const TIER_CSS=`
  .lvl{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-weight:800;font-size:.78rem;border:1px solid;vertical-align:middle}
  .lvl-1{background:rgba(205,127,50,.15);color:#e0a06a;border-color:#cd7f32}
@@ -49,7 +61,17 @@ const TIER_CSS=`
  .lb-close{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:1.4rem;width:42px;height:42px;border-radius:50%;cursor:pointer}
  .lb-dots{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
  .lb-dots span{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.4)}
- .lb-dots span.on{background:#fff}`;
+ .lb-dots span.on{background:#fff}
+ .pm-grid{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+ .pm-tile{position:relative;width:76px;height:76px;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:#111;flex:0 0 auto}
+ .pm-tile img{width:100%;height:100%;object-fit:cover}
+ .pm-actions{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:4px;padding:3px;background:linear-gradient(transparent,rgba(0,0,0,.8))}
+ .pm-btn{width:26px;height:26px;border-radius:8px;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:.78rem;cursor:pointer;line-height:1}
+ .pm-btn.del{background:var(--error)}
+ .pm-add{width:76px;height:76px;border-radius:12px;border:2px dashed var(--border-strong);display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:var(--dim);cursor:pointer;background:rgba(255,255,255,.03);flex:0 0 auto}
+ .pm-add:hover{border-color:var(--primary);color:var(--primary)}
+ .file-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;border:1px solid var(--border-strong);background:rgba(0,217,255,.08);color:var(--text);cursor:pointer;font-weight:700;font-size:.9rem;margin:6px 0}
+ .file-btn .fb-txt{color:var(--dim);font-weight:500;font-size:.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`;
 document.addEventListener('DOMContentLoaded',async()=>{initPWA();await loadBranding();const isApp=!!document.getElementById('section-dashboard');const{data:{session}}=await db.auth.getSession();if(isApp){if(!session){location.replace('index.html');return;}currentUser=session.user;window._fendyxToken=session.access_token;await enterApp();}else if(session)location.replace('app.html');});
 function initPWA(){if(!document.querySelector('link[rel="manifest"]')){const l=document.createElement('link');l.rel='manifest';l.href='manifest.json';document.head.appendChild(l);const m=document.createElement('meta');m.name='theme-color';m.content='#00d9ff';document.head.appendChild(m);const a=document.createElement('link');a.rel='apple-touch-icon';a.href='icons/icon.svg';document.head.appendChild(a);}if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});const unlock=()=>{try{window._fendyxAudio=window._fendyxAudio||new (window.AudioContext||window.webkitAudioContext)();window._fendyxAudio.resume();}catch(e){}window.removeEventListener('pointerdown',unlock);};window.addEventListener('pointerdown',unlock);}
 function setWorkerOnlineDB(on){if(!currentUser)return Promise.resolve();if(currentProfile)currentProfile.is_online=on;return db.from('profiles').update({is_online:on}).eq('id',currentUser.id);}
@@ -66,9 +88,7 @@ function injectDynamicUI(){if(document.getElementById('fendyx-extra-style'))retu
  .ref-code{font-family:'Orbitron';letter-spacing:3px;color:var(--primary);font-weight:900}
  .incoming-call{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card-2);border:2px solid var(--success);border-radius:18px;padding:14px 20px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 40px rgba(0,255,157,.35);animation:proxIn .4s;max-width:92vw}
  .incoming-call b{display:block}`;document.head.appendChild(st);
- // Logo / nombre → Inicio
- const hl=document.querySelector('.header-left');
- if(hl){hl.style.cursor='pointer';hl.onclick=()=>showSection('dashboard');}
+ const hl=document.querySelector('.header-left');if(hl){hl.style.cursor='pointer';hl.onclick=()=>showSection('dashboard');}
  const header=document.querySelector('.app-header');
  if(header&&!document.getElementById('panicTop')){const b=document.createElement('button');b.id='panicTop';b.className='panic-top';b.textContent='🆘';b.onclick=()=>{if(confirm('¿Enviar ALERTA DE PÁNICO al administrador con tu ubicación actual?'))sendPanic('general');};header.appendChild(b);}
  const av=document.getElementById('userAvatar');if(av)av.onclick=()=>toggleUserMenu();
@@ -77,10 +97,10 @@ function injectDynamicUI(){if(document.getElementById('fendyx-extra-style'))retu
  girls.innerHTML=`<div class="section-header"><h2>💃 Videollamada con chicas</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="girlsGate"></div><div id="girlsGrid" class="cards-grid"></div>`;
  document.querySelector('.app-main').appendChild(girls);
  const kyc=document.createElement('section');kyc.id='section-kyc';kyc.className='app-section';
- kyc.innerHTML=`<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div><form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><input type="file" id="kycIdCard" accept="image/*" required><label class="dim">🤳 Rostro</label><input type="file" id="kycFace" accept="image/*" required><button type="submit" class="btn-primary">Enviar</button></form>`;
+ kyc.innerHTML=`<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div><form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar cédula</span><input type="file" id="kycIdCard" accept="image/*" hidden required onchange="fbLabel(this)"></label><label class="dim">🤳 Rostro</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar foto de rostro</span><input type="file" id="kycFace" accept="image/*" hidden required onchange="fbLabel(this)"></label><button type="submit" class="btn-primary">Enviar</button></form>`;
  document.querySelector('.app-main').appendChild(kyc);
  const mc=document.querySelector('#modal-recharge .modal-content');
- if(mc)mc.innerHTML=`<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3). Con 5+ tu cuenta queda activa para siempre.</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura</label><input type="file" id="reqProof" accept="image/*"><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
+ if(mc)mc.innerHTML=`<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3). Con 5+ tu cuenta queda activa para siempre.</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura del pago</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar captura</span><input type="file" id="reqProof" accept="image/*" hidden onchange="fbLabel(this)"></label><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
  const recBtn=document.querySelector('#section-tokens .row-buttons .btn-primary');
  if(recBtn)recBtn.onclick=async()=>{openModal('modal-recharge');await loadScript('tokens.js');loadMyRecharges();};
  const tabs=document.querySelector('.admin-tabs');

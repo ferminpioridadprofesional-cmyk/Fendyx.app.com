@@ -64,17 +64,29 @@ function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_lev
  <div class="chips-row" style="margin:6px 0">${(w.interests||[]).slice(0,3).map(i=>`<span class="chip">🎯 ${i}</span>`).join('')}</div>
  <div class="row-actions"><button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil y fotos</button><button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹 Llamar</button></div></div>`;}
 async function fetchPublicWorkers(){const{data,error}=await db.rpc('get_public_workers');if(error){showToast('❌ '+error.message);return[];}return (typeof data==='string'?JSON.parse(data):data)||[];}
-async function loadGirls(){injectGirlStyle();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');const bal=parseFloat(currentProfile.tokens_balance||0);const kycOk=currentProfile.kyc_status==='approved';const moneyOk=bal>=1||currentProfile.unlimited_tokens||currentProfile.role==='admin';if(!(kycOk&&moneyOk)){grid.innerHTML='';gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;return;}gate.innerHTML='';_girlsList=await fetchPublicWorkers();grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">No hay chicas verificadas en línea</p>';}
-
-// ===== Gestión galería de modelo (máx 5) =====
+async function loadGirls(){
+  injectGirlStyle();
+  const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');
+  const isAdmin=currentProfile.role==='admin';
+  const bal=parseFloat(currentProfile.tokens_balance||0);
+  const kycOk=currentProfile.kyc_status==='approved';
+  const moneyOk=bal>=1||currentProfile.unlimited_tokens;
+  if(!isAdmin && !(kycOk&&moneyOk)){
+    grid.innerHTML='';
+    gate.innerHTML=`<div class="req-gate"><h3>🔒 Acceso al área de videollamadas</h3><p class="dim">Para garantizar un entorno seguro y verificado, debes cumplir:</p><ul><li>${kycOk?'✅':'❌'} <b>Verificación de identidad (KYC)</b> aprobada (cédula + foto de rostro).</li><li>${moneyOk?'✅':'❌'} <b>Mínimo 1 token ($1)</b> en tu cuenta.</li></ul><div class="row-buttons" style="justify-content:center">${!kycOk?`<button class="btn-primary" onclick="showSection('profile')">🪪 Verificar identidad</button>`:''}${!moneyOk?`<button class="btn-primary" onclick="showSection('tokens')">◈ Recargar</button>`:''}</div></div>`;
+    return;
+  }
+  gate.innerHTML='';
+  _girlsList=await fetchPublicWorkers();
+  grid.innerHTML=_girlsList.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">No hay chicas verificadas en línea</p>';
+}
 function wgRender(){const wrap=document.getElementById('wpGalleryPrev');if(!wrap)return;const kept=_wgKept.map((u,i)=>`<span class="thumbwrap"><img src="${u}"><button type="button" class="del" onclick="wgRemoveKept(${i})">✕</button></span>`).join('');const nw=_wgNew.map((f,i)=>`<span class="thumbwrap"><img src="${URL.createObjectURL(f)}"><button type="button" class="del" onclick="wgRemoveNew(${i})">✕</button></span>`).join('');wrap.innerHTML=(kept+nw)||'<p class="dim">Sin fotos de modelo</p>';}
 function wgRemoveKept(i){_wgKept.splice(i,1);wgRender();}
 function wgRemoveNew(i){_wgNew.splice(i,1);wgRender();}
 function wgOnFiles(input){const files=Array.from(input.files||[]);for(const f of files){if(_wgKept.length+_wgNew.length>=5){showToast('⚠️ Máx 5 fotos');break;}_wgNew.push(f);}input.value='';wgRender();}
-
 async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker';const grid=document.getElementById('workersGrid');const panel=document.getElementById('workerPanel');
  if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;_wgKept=[...(p.worker_gallery||[])].slice(0,5);_wgNew=[];
-  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo',' Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
   panel.innerHTML=`<h3>💼 Mi Trabajo</h3><div class="wk-card tier-${lvNum}">
    <div class="wk-name">🎭 ${p.model_name||'Modelo'}</div>
    <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">TU ganancia: ◈ ${net}/min</span></div>

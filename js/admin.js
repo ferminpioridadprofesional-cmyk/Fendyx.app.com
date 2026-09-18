@@ -13,13 +13,15 @@ function injectAdminExtras(){
   if(!document.getElementById('modal-userfile')){const m=document.createElement('div');m.id='modal-userfile';m.className='modal hidden';m.innerHTML=`<div class="modal-content wide"><div class="modal-head"><h3 id="ufTitle">Ficha</h3><button class="modal-close" onclick="closeModal('modal-userfile')">✕</button></div><div id="ufBody"></div></div>`;document.body.appendChild(m);}
   const tabs=document.querySelector('.admin-tabs');
   const add=(key,label,html)=>{if(tabs&&!tabs.querySelector('[data-'+key+'-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-${key}-tab onclick="switchAdminTab('${key}',this)">${label}</button>`);const p=document.createElement('div');p.id='admin-'+key;p.className='admin-panel';p.innerHTML=html;document.getElementById('section-admin').appendChild(p);}};
-  add('rates','💰 Tarifas','<p class="dim">Ganancia NETA de la modelo por minuto.</p><div id="levelsRateList" class="list-compact"></div>');
-  add('vip','🎭 Niveles VIP','<p class="dim">Saldo mínimo para cada máscara.</p><div id="vipLevelsList" class="list-compact"></div>');
+  add('rates','💰 Tarifas','<p class="dim">Ganancia NETA de la modelo por minuto (el cliente paga el doble).</p><div id="levelsRateList" class="list-compact"></div>');
+  add('vip','🎭 Niveles VIP','<p class="dim">Saldo mínimo para cada máscara de usuario.</p><div id="vipLevelsList" class="list-compact"></div>');
   add('cats','🎭 Categorías','<p class="dim">Renombra las 4 categorías y asigna cada modelo.</p><div id="catNamesList" class="list-compact"></div><h4 class="sub-title">Asignar modelos</h4><div id="catModelsList" class="list-compact"></div>');
   add('workers','💃 Trabajadoras','<p class="dim">Asigna nivel y tarifa individual.</p><div id="adminWorkersList" class="list-compact"></div>');
   add('recharges','💳 Recargas','<div id="rechargeRequestsList" class="list-compact"></div>');
   add('earnings','💵 Ganancias App','<div class="row-buttons"><select class="btn-small" id="earnFilter" onchange="setEarnPeriod(this.value)"><option value="hoy">Hoy</option><option value="semana">Última semana</option><option value="quincena" selected>Última quincena</option><option value="todo">Todo</option></select></div><div id="earnKpis" class="row-buttons" style="flex-wrap:wrap"></div><div id="earnBreak" class="list-compact"></div><div id="earnList" class="list-compact"></div>');
   add('payouts','💸 Pagos','<p class="dim">Lo que la app debe pagar por retiros (días 15 y 30).</p><div class="row-buttons"><select class="btn-small" id="payFilter" onchange="setPayPeriod(this.value)"><option value="hoy">Hoy</option><option value="semana">Última semana</option><option value="quincena" selected>Última quincena</option><option value="todo">Todo</option></select></div><div id="payKpis" class="row-buttons" style="flex-wrap:wrap"></div><div id="payOwed" class="list-compact"></div><div id="payList" class="list-compact"></div>');
+  add('turn','📡 TURN','<p class="dim">Servidor TURN (Metered/Cloudflare/propio). Prioridad = orden.</p><div class="owner-form"><label class="dim">URL Worker Cloudflare (opcional)</label><input type="text" id="turnUrl" placeholder="https://xxx.workers.dev"><label class="dim">URLs TURN (separadas por coma)</label><input type="text" id="turnUrls" placeholder="turn:global.relay.metered.ca:80, ..."><label class="dim">Usuario</label><input type="text" id="turnUser"><label class="dim">Credencial</label><input type="text" id="turnCred"><button class="btn-primary" onclick="saveTurnConfig()">💾 Guardar TURN</button><p class="dim" id="turnStatus" style="margin-top:8px"></p></div>');
+  add('adultcfg','🔞 Área Adultos','<p class="dim">Elige qué módulos viven DENTRO del Área Adultos +18 (Chicas siempre).</p><div id="adultModsList" class="list-compact"></div>');
   add('safety','🚨 Seguridad','<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>');
   add('modules','🧩 Apartados','<p class="dim">Activa, marca "próximamente" u oculta cada apartado.</p><div id="modulesConfigList" class="list-compact"></div>');
   add('supervision','👁 Supervisión','<p class="dim">Llamadas en vivo. Mosaico invisible.</p><div id="liveCallsList" class="list-compact"></div>');}
@@ -27,15 +29,60 @@ function switchAdminTab(tab,btn){
   document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
   document.querySelectorAll('.admin-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('admin-'+tab)?.classList.add('active');
-  const loaders={overview:loadAdminOverview,users:loadAdminUsers,tokens:loadAdminTransactions,content:loadAdminContent,withdrawals:loadAdminWithdrawals,kyc:loadKycList,workers:loadWorkersAdmin,recharges:loadRechargeRequests,safety:loadSafety,modules:loadApartados,supervision:loadSupervision,rates:loadLevelsAdmin,vip:loadVipLevels,cats:loadCatsAdmin,earnings:loadEarningsAdmin,payouts:loadPayoutsAdmin};
+  const loaders={overview:loadAdminOverview,users:loadAdminUsers,tokens:loadAdminTransactions,content:loadAdminContent,withdrawals:loadAdminWithdrawals,kyc:loadKycList,workers:loadWorkersAdmin,recharges:loadRechargeRequests,safety:loadSafety,modules:loadApartados,supervision:loadSupervision,rates:loadLevelsAdmin,vip:loadVipLevels,cats:loadCatsAdmin,earnings:loadEarningsAdmin,payouts:loadPayoutsAdmin,turn:loadTurnConfig,adultcfg:loadAdultCfg};
   loaders[tab]?.();}
 function startSafetyRealtime(){if(window._safetyCh)return;window._safetyCh=db.channel('fendyx-safety').on('postgres_changes',{event:'INSERT',schema:'public',table:'panic_alerts'},()=>{if(document.getElementById('admin-safety')?.classList.contains('active'))loadSafety();}).on('postgres_changes',{event:'INSERT',schema:'public',table:'reports'},()=>{if(document.getElementById('admin-safety')?.classList.contains('active'))loadSafety();}).subscribe();}
+// ===== TURN =====
+async function loadTurnConfig(){
+  const{data}=await db.from('app_branding').select('turn_config').eq('id',1).single();
+  const tc=data?.turn_config||{};const s0=(tc.servers&&tc.servers[0])||{};
+  document.getElementById('turnUrl').value=tc.worker?.url||'';
+  document.getElementById('turnUrls').value=(s0.urls||[]).join(', ');
+  document.getElementById('turnUser').value=s0.username||'';
+  document.getElementById('turnCred').value=s0.credential||'';
+  const st=document.getElementById('turnStatus');if(st)st.textContent=(tc.worker||tc.servers)?'✅ TURN configurado (más públicos de respaldo)':'⚠️ Sin TURN propio (solo relays públicos)';}
+async function saveTurnConfig(){
+  const url=document.getElementById('turnUrl').value.trim();
+  const urls=document.getElementById('turnUrls').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const user=document.getElementById('turnUser').value.trim();
+  const cred=document.getElementById('turnCred').value.trim();
+  const cfg={};
+  if(url)cfg.worker={url};
+  if(urls.length&&user&&cred)cfg.servers=[{urls,username:user,credential:cred}];
+  await db.from('app_branding').update({turn_config:cfg,updated_at:new Date().toISOString()}).eq('id',1);
+  showToast('✅ TURN guardado');loadTurnConfig();}
+// ===== ÁREA ADULTOS =====
+function loadAdultCfg(){
+  const cur=window._adultModules||['girls'];
+  const opts=[{id:'girls',n:'💃 Videollamada con chicas'},{id:'map',n:'📍 Mapa Social'},{id:'radar',n:'🌙 Radar Nocturno'},{id:'chat',n:'💬 Chat'},{id:'events',n:'🎪 Eventos'},{id:'marketplace',n:'🛒 Marketplace'},{id:'restaurants',n:'🍽️ Restaurantes'},{id:'orders',n:'📦 Pedidos'}];
+  document.getElementById('adultModsList').innerHTML=opts.map(o=>`<label class="check-line" style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:.95rem"><input type="checkbox" ${cur.includes(o.id)?'checked':''} ${o.id==='girls'?'disabled':''} onchange="toggleAdultMod('${o.id}',this.checked)"> ${o.n}</label>`).join('');}
+async function toggleAdultMod(id,on){
+  let cur=(window._adultModules||['girls']).slice();
+  if(on&&!cur.includes(id))cur.push(id);
+  if(!on)cur=cur.filter(x=>x!==id);
+  if(!cur.includes('girls'))cur.push('girls');
+  window._adultModules=cur;
+  await db.from('app_branding').update({adult_modules:cur,updated_at:new Date().toISOString()}).eq('id',1);
+  showToast('✅ Área Adultos actualizada');loadAdultCfg();loadModules();}
+// ===== Categorías =====
+async function loadCatsAdmin(){
+  const{data:br}=await db.from('app_branding').select('girl_categories').eq('id',1).single();
+  const cats=br?.girl_categories||[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
+  window._girlCategories=cats;
+  document.getElementById('catNamesList').innerHTML=cats.map(c=>`<div class="row-item"><div class="row-main"><b>Categoría ${c.id}</b></div><input type="text" class="btn-small" style="width:160px" id="catname_${c.id}" value="${c.name}"></div>`).join('')+`<div class="row-buttons"><button class="btn-primary" onclick="saveCatNames()">💾 Guardar nombres</button></div>`;
+  const{data:models}=await db.from('profiles').select('id, model_name, full_name, girl_category').eq('role','remote_worker').eq('kyc_status','approved').order('created_at',{ascending:false});
+  document.getElementById('catModelsList').innerHTML=(models||[]).map(m=>`<div class="row-item"><div class="row-main"><b>${m.model_name||m.full_name}</b></div><select class="btn-small" onchange="setGirlCat('${m.id}',this.value)">${cats.map(c=>`<option value="${c.id}" ${(m.girl_category||1)===c.id?'selected':''}>${c.name}</option>`).join('')}</select></div>`).join('')||'<p class="dim">Sin modelos</p>';}
+async function saveCatNames(){
+  const cats=(window._girlCategories||[]).map(c=>({id:c.id,name:document.getElementById('catname_'+c.id)?.value||c.name}));
+  await db.from('app_branding').update({girl_categories:cats,updated_at:new Date().toISOString()}).eq('id',1);
+  window._girlCategories=cats;showToast('✅ Categorías renombradas');loadCatsAdmin();}
+async function setGirlCat(id,v){await db.from('profiles').update({girl_category:parseInt(v)}).eq('id',id);showToast('✅ Modelo reubicada');}
+// ===== Ganancias App =====
+function setEarnPeriod(v){earnPeriod=v;loadEarningsAdmin();}
 function periodStart(p){const now=new Date();if(p==='hoy')return new Date(now.getFullYear(),now.getMonth(),now.getDate());if(p==='semana')return new Date(now.getTime()-7*86400000);if(p==='quincena')return new Date(now.getTime()-15*86400000);return new Date(0);}
 function fmtDT(x){const d=new Date(x);return d.toLocaleDateString('es')+' '+d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});}
-// ===== Ganancias de la App =====
-function setEarnPeriod(v){earnPeriod=v;loadEarningsAdmin();}
 async function loadEarningsAdmin(){
-  const {data}=await db.from('app_earnings').select('*').order('created_at',{ascending:false}).limit(500);
+  const{data}=await db.from('app_earnings').select('*').order('created_at',{ascending:false}).limit(500);
   const rows=data||[];const start=periodStart(earnPeriod);
   const inP=rows.filter(r=>new Date(r.created_at)>=start);
   const tot=r=>r.reduce((s,x)=>s+parseFloat(x.amount||0),0);
@@ -47,10 +94,10 @@ async function loadEarningsAdmin(){
   const bySrc={};inP.forEach(r=>{bySrc[r.source]=(bySrc[r.source]||0)+parseFloat(r.amount||0);});
   document.getElementById('earnBreak').innerHTML=Object.entries(bySrc).map(([k,v])=>`<div class="row-item"><div class="row-main"><b>${k==='videollamada'?'📹 Comisión videollamadas (50%)':k==='corte_de_modelo'?'✂️ Cortes de llamada (modelo colgó)':k}</b></div><span class="tx-amount positive">◈ ${v.toFixed(2)}</span></div>`).join('')||'<p class="dim">Sin ganancias en el período</p>';
   document.getElementById('earnList').innerHTML=inP.slice(0,60).map(r=>`<div class="row-item"><div class="row-main"><b>${r.source==='videollamada'?'📹 Comisión':r.source==='corte_de_modelo'?'✂️ Corte':'💵'}</b><small>${fmtDT(r.created_at)}</small></div><span class="tx-amount positive">◈ ${parseFloat(r.amount).toFixed(2)}</span></div>`).join('')||'';}
-// ===== Pagos pendientes =====
+// ===== Pagos =====
 function setPayPeriod(v){payPeriod=v;loadPayoutsAdmin();}
 async function loadPayoutsAdmin(){
-  const {data}=await db.from('withdrawals').select('*, profiles(full_name, model_name, email, binance_id, binance_email)').neq('status','rejected').order('scheduled_date',{ascending:true});
+  const{data}=await db.from('withdrawals').select('*, profiles(full_name, model_name, email, binance_id, binance_email)').neq('status','rejected').order('scheduled_date',{ascending:true});
   const rows=data||[];const start=periodStart(payPeriod);
   const inP=rows.filter(r=>new Date(r.created_at)>=start&&r.status!=='paid');
   const owed={};rows.filter(r=>r.status==='pending'||r.status==='approved').forEach(r=>{const k=r.user_id;owed[k]=owed[k]||{name:r.profiles?.model_name||r.profiles?.full_name||r.profiles?.email,total:0,next:r.scheduled_date,bin:r.profiles?.binance_id,mail:r.profiles?.binance_email};owed[k].total+=parseFloat(r.amount||0);});
@@ -64,26 +111,13 @@ async function loadPayoutsAdmin(){
   document.getElementById('payList').innerHTML=inP.slice(0,60).map(r=>`<div class="row-item"><div class="row-main"><b>${r.profiles?.model_name||r.profiles?.full_name||'—'} · ◈ ${parseFloat(r.amount).toFixed(2)}</b><small>Solicitado ${fmtDT(r.created_at)} · 📅 ${r.scheduled_date||'—'} · ${r.status}</small></div><div class="row-actions">${r.status!=='paid'?`<button class="btn-small success" onclick="markPaid('${r.id}')">✅ Pagado</button><button class="btn-small danger" onclick="refundWithdrawal('${r.id}')">↩️</button>`:''}</div></div>`).join('')||'';}
 async function markPaid(id){await db.from('withdrawals').update({status:'paid'}).eq('id',id);showToast('✅ Marcado como pagado');loadPayoutsAdmin();}
 async function refundWithdrawal(id){if(!confirm('¿Rechazar y reembolsar el retiro?'))return;const{data:w}=await db.from('withdrawals').select('*').eq('id',id).single();if(!w||w.status==='paid')return;await db.rpc('credit_tokens',{p_to:w.user_id,p_amount:parseFloat(w.amount),p_desc:'Reembolso de retiro'});await db.from('withdrawals').update({status:'rejected'}).eq('id',id);showToast('↩️ Reembolsado');loadPayoutsAdmin();}
-// ===== Categorías =====
-async function loadCatsAdmin(){
-  const {data:br}=await db.from('app_branding').select('girl_categories').eq('id',1).single();
-  const cats=br?.girl_categories||[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
-  window._girlCategories=cats;
-  document.getElementById('catNamesList').innerHTML=cats.map(c=>`<div class="row-item"><div class="row-main"><b>Categoría ${c.id}</b></div><input type="text" class="btn-small" style="width:160px" id="catname_${c.id}" value="${c.name}"></div>`).join('')+`<div class="row-buttons"><button class="btn-primary" onclick="saveCatNames()">💾 Guardar nombres</button></div>`;
-  const {data:models}=await db.from('profiles').select('id, model_name, full_name, girl_category').eq('role','remote_worker').eq('kyc_status','approved').order('created_at',{ascending:false});
-  document.getElementById('catModelsList').innerHTML=(models||[]).map(m=>`<div class="row-item"><div class="row-main"><b>${m.model_name||m.full_name}</b></div><select class="btn-small" onchange="setGirlCat('${m.id}',this.value)">${cats.map(c=>`<option value="${c.id}" ${(m.girl_category||1)===c.id?'selected':''}>${c.name}</option>`).join('')}</select></div>`).join('')||'<p class="dim">Sin modelos</p>';}
-async function saveCatNames(){
-  const cats=(window._girlCategories||[]).map(c=>({id:c.id,name:document.getElementById('catname_'+c.id)?.value||c.name}));
-  await db.from('app_branding').update({girl_categories:cats,updated_at:new Date().toISOString()}).eq('id',1);
-  window._girlCategories=cats;showToast('✅ Categorías renombradas');loadCatsAdmin();}
-async function setGirlCat(id,v){await db.from('profiles').update({girl_category:parseInt(v)}).eq('id',id);showToast('✅ Modelo reubicada');}
 // ===== VIP / Tarifas =====
 function loadVipLevels(){const list=(window._userLevels||DEFAULT_USER_LEVELS).slice().sort((a,b)=>a.level-b.level);document.getElementById('vipLevelsList').innerHTML=list.map(l=>`<div class="row-item"><div class="row-main"><b>🎭 ${l.name}</b><small>Nivel ${l.level}${l.max!=null?' · hasta ◈'+l.max:' · sin límite'}</small></div><div class="row-actions"><span class="dim">desde ◈</span><input type="number" min="0" step="1" value="${l.min}" style="width:90px" class="btn-small" id="vipmin_${l.level}"></div></div>`).join('')+`<div class="row-buttons" style="margin-top:10px"><button class="btn-primary" onclick="saveVipLevels()">💾 Guardar rangos VIP</button></div>`;}
 async function saveVipLevels(){const list=(window._userLevels||DEFAULT_USER_LEVELS).slice().sort((a,b)=>a.level-b.level);const mins=list.map(l=>{const v=parseFloat(document.getElementById('vipmin_'+l.level).value);return isNaN(v)?0:v;});for(let i=1;i<mins.length;i++){if(mins[i]<=mins[i-1])mins[i]=mins[i-1]+1;}const out=list.map((l,i)=>({level:l.level,name:l.name,min:mins[i],max:(i<list.length-1?mins[i+1]-1:null)}));await db.from('app_branding').update({user_levels:out,updated_at:new Date().toISOString()}).eq('id',1);window._userLevels=out;showToast('✅ Rangos VIP actualizados');loadVipLevels();}
 async function loadLevelsAdmin(){let rates={};try{const{data}=await db.from('worker_levels').select('*');(data||[]).forEach(r=>rates[r.level]=parseFloat(r.rate));}catch(e){}
   document.getElementById('levelsRateList').innerHTML=LEVELS.map(l=>{const cur=rates[l.level]!=null?rates[l.level]:l.rate;return `<div class="row-item"><div class="row-main"><b>${l.ico} ${l.name}</b><small>Modelo ◈ ${cur}/min · Cliente ◈ ${(cur*2).toFixed(2)}/min</small></div><div class="row-actions"><input type="number" step="0.1" min="0.1" max="50" value="${cur}" style="width:90px" class="btn-small" id="lvlrate_${l.level}"><button class="btn-small success" onclick="saveLevelRate(${l.level})">💾</button></div></div>`;}).join('');}
 async function saveLevelRate(level){const rate=parseFloat(document.getElementById('lvlrate_'+level).value);if(isNaN(rate)||rate<0.1||rate>50)return showToast('Rango 0.1 a 50');const{data,error}=await db.rpc('admin_set_level_rate',{p_level:level,p_rate:rate});if(error||(data&&data.startsWith('ERROR')))return showToast('❌ '+(data||error.message));showToast('✅ Nivel actualizado');loadLevelsAdmin();loadWorkersAdmin();}
-// ===== Resto del panel =====
+// ===== Resto =====
 async function purgeActivity(){if(!confirm('¿Borrar actividad y transacciones? Los saldos NO se afectan.'))return;const{data,error}=await db.rpc('admin_purge_logs');if(error)return showToast('❌ '+error.message);showToast('🗑 Purgado: '+data);loadAdminOverview();}
 async function purgeChats(){if(!confirm('¿Borrar TODOS los chats?'))return;const{data,error}=await db.rpc('admin_purge_chats');if(error)return showToast('❌ '+error.message);showToast('💬 Eliminados: '+data);}
 async function purgePanic(){if(!confirm('¿Borrar historial de pánico?'))return;const{data,error}=await db.rpc('admin_purge_panic');if(error)return showToast('❌ '+error.message);showToast('🆘 Borrado: '+data);if(document.getElementById('admin-safety')?.classList.contains('active'))loadSafety();}

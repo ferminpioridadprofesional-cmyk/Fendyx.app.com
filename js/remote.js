@@ -46,7 +46,7 @@ function renderWkProfile(data,preview){ensureWkModal();injectGirlStyle();const r
  <p class="dim">${data.bio||rd?.bio||''}</p>
  <div class="chips-row">${(data.interests||[]).map(i=>`<span class="chip active">🎯 ${i}</span>`).join('')}${(data.preferences||[]).map(i=>`<span class="chip">💫 ${i}</span>`).join('')}</div>
  <h4 class="sub-title">📸 Galería</h4><div class="pf-gallery">${photos.map((u,i)=>`<img src="${u}" onclick='wkOpenLightbox(${JSON.stringify(photos)},${i})'>`).join('')||'<p class="dim">Sin fotos</p>'}</div>
- <div style="margin-top:12px">${preview?'<p class="dim">Vista previa (solo lectura) · TU ganancia neta: ◈ '+net+'/min</p>':`<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${net})">📹 Llamar · ◈ ${shown}/min</button>`}</div>`;openModal('wkProfileModal');}
+ <div style="margin-top:12px">${preview?'<p class="dim">Vista previa (solo lectura) · TU ganancia: ◈ '+net+'/min</p>':`<button class="btn-primary" onclick="closeModal('wkProfileModal');startCall('${data.id}',${net})">📹 Llamar · ◈ ${shown}/min</button>`}</div>`;openModal('wkProfileModal');}
 window._rwRenderProfile=async function(userId,preview){const{data}=await db.from('profiles').select('*, role_details(*)').eq('id',userId).single();if(!data)return;renderWkProfile(data,preview);};
 async function openWorkerProfile(id){await window._rwRenderProfile(id,false);}
 async function previewWorkerProfile(){await window._rwRenderProfile(currentUser.id,true);}
@@ -67,7 +67,7 @@ async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker
   panel.innerHTML=`<h3>💼 Mi Trabajo</h3><div class="wk-card tier-${lvNum}">
    <div class="wk-name">🎭 ${p.model_name||'Modelo'}</div>
    <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">TU ganancia: ◈ ${net}/min</span></div>
-   <div class="wk-kyc">${p.kyc_status==='approved'?'✅ Verificación KYC aprobada':'⏳ Verificación KYC pendiente'} · El cliente paga ◈ ${(net*2).toFixed(2)}/min</div>
+   <div class="wk-kyc">${p.kyc_status==='approved'?'✅ Verificación KYC aprobada':'⏳ Verificación KYC pendiente'}</div>
    <div class="wk-switch-row"><span id="wkState" class="wk-state ${on?'on':'off'}">${on?'🟢 EN LÍNEA':'🔴 DESCONECTADA'}</span><label class="wk-switch"><input type="checkbox" id="wkToggle" ${on?'checked':''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label></div>
    <p class="dim" style="margin-top:12px">Solo recibes llamadas con la app/página <b>abierta</b> y el switch en verde.</p>
    <div class="row-buttons" style="margin-top:10px"><button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button></div>

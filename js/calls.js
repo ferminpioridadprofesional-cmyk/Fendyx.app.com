@@ -7,6 +7,7 @@ let peerPresent=false,gotAnswer=false,gotOffer=false;
 let helloTimer=null,ackTimer=null,offerTimer=null,watchdog=null,lastReconnectAt=0,callStartAt=0;
 let micOn=true,camOn=true,netListenersOn=false,ringTimer=null;
 let monPc=null,monChannel=null,monPcs={};
+let lowTimer=null,clientBalanceLocal=0;
 const ICE_SERVERS=[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp','turns:openrelay.metered.ca:443'],username:'openrelayproject',credential:'openrelayproject'},{urls:['turn:relay.backups.cz:3478','turn:relay.backups.cz:5349?transport=tcp','turns:relay.backups.cz:5349'],username:'webrtc',credential:'webrtc'}];
 function setStatus(t){const m=document.getElementById('callStatusMsg');if(m)m.textContent=t;}
 function setChatState(t,ok){const c=document.getElementById('chatState');if(c){c.textContent=t;c.style.color=ok?'var(--success)':'var(--error)';c.style.fontWeight='800';}}
@@ -16,6 +17,9 @@ function clearAck(){if(ackTimer){clearInterval(ackTimer);ackTimer=null;}}
 function clearOffer(){if(offerTimer){clearInterval(offerTimer);offerTimer=null;}}
 function startRing(){stopRing();try{const ctx=window._fendyxAudio||(window._fendyxAudio=new (window.AudioContext||window.webkitAudioContext)());ctx.resume?.();const beep=()=>{try{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0.0001,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.35,ctx.currentTime+0.05);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.4);o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.45);}catch(e){}};beep();ringTimer=setInterval(beep,1200);}catch(e){}try{navigator.vibrate?.([400,200,400,200,400]);}catch(e){}}
 function stopRing(){if(ringTimer){clearInterval(ringTimer);ringTimer=null;}try{navigator.vibrate?.(0);}catch(e){}}
+// ===== Contador regresivo por saldo =====
+function showLow(sec){const b=document.getElementById('lowTimeBanner');const s=document.getElementById('lowTimeSec');if(!b)return;b.classList.remove('hidden');let v=sec;if(s)s.textContent=v;if(lowTimer)clearInterval(lowTimer);lowTimer=setInterval(()=>{v--;if(v<=0){clearInterval(lowTimer);lowTimer=null;b.innerHTML='💸 Saldo agotado: llamada finalizada';setTimeout(()=>b.classList.add('hidden'),2500);}else if(s)s.textContent=v;},1000);}
+function hideLow(){if(lowTimer){clearInterval(lowTimer);lowTimer=null;}const b=document.getElementById('lowTimeBanner');if(b)b.classList.add('hidden');}
 function ensureCallUI(){if(document.getElementById('fendyx-call-style'))return;const st=document.createElement('style');st.id='fendyx-call-style';st.textContent=`
  .video-wrap{position:relative;height:calc(100vh - 300px);min-height:300px;background:#000;border-radius:16px;overflow:hidden;margin:10px 0}
  #remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
@@ -23,6 +27,7 @@ function ensureCallUI(){if(document.getElementById('fendyx-call-style'))return;c
  #localVideo.camoff{opacity:.15;filter:grayscale(1)}
  #callStatusMsg{position:absolute;top:10px;left:12px;background:rgba(0,0,0,.55);padding:4px 10px;border-radius:999px;font-size:.8rem}
  .net-hint{position:absolute;bottom:10px;left:12px;right:12px;background:rgba(255,176,32,.92);color:#04060c;padding:6px 10px;border-radius:10px;font-size:.8rem;font-weight:800}
+ .low-time{margin:8px 0;padding:10px 14px;border-radius:12px;background:rgba(255,59,107,.15);border:1px solid var(--error);color:var(--error);font-weight:800;text-align:center;animation:lvlGlow 1s infinite}
  .call-info{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,217,255,.08);border:1px solid var(--border);border-radius:13px;font-family:'Orbitron';font-weight:800;color:var(--primary);flex-wrap:wrap}
  .chat-state{font-family:'Rajdhani';font-weight:800;font-size:.85rem}
  .call-controls{display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
@@ -47,6 +52,7 @@ function ensureCallUI(){if(document.getElementById('fendyx-call-style'))return;c
  const mc=document.querySelector('#modal-call .modal-content');
  if(mc)mc.innerHTML=`
   <div class="call-info"><span id="callTimer">00:00</span><span id="chatState" class="chat-state">💬 Chat no conectado</span><span id="callCost">◈ 0.00</span></div>
+  <div id="lowTimeBanner" class="low-time hidden">⏳ Se terminará en <b id="lowTimeSec">10</b> s por saldo</div>
   <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><video id="localVideo" autoplay playsinline muted></video>
    <div id="callStatusMsg" class="dim">🎥 Conectando video…</div>
    <div id="netHint" class="net-hint hidden">📶 El video no conecta en esta red. Cambia a datos móviles o activa/desactiva WiFi.</div></div>
@@ -68,7 +74,7 @@ async function rejectIncoming(rowId){stopRing();document.getElementById('incomin
 function remoteHungUp(row){stopRing();if(callRoom&&row.room_id===callRoom){showToast('📞 La otra persona colgó');cleanupCall();}}
 async function startWebCall(room,opts={}){await beginCall(room,opts,true);}
 async function joinWebCall(room,opts={}){await beginCall(room,opts,false);}
-async function beginCall(room,opts,initiator){ensureCallUI();armNetworkWatch();if(pc)teardownPC();clearHello();clearAck();clearOffer();callRoom=room;callRowId=opts.rowId||null;callRate=parseFloat(opts.rate)||0;iAmClientFlag=!!opts.asClient;isInitiatorFlag=!!initiator;callCostTotal=0;callEarnTotal=0;callSeconds=0;callSetupDone=false;facingMode='user';offerSent=false;pendingCandidates=[];currentPolicy='all';peerPresent=false;gotAnswer=false;gotOffer=false;lastReconnectAt=0;callStartAt=Date.now();micOn=true;camOn=true;
+async function beginCall(room,opts,initiator){ensureCallUI();armNetworkWatch();if(pc)teardownPC();clearHello();clearAck();clearOffer();hideLow();callRoom=room;callRowId=opts.rowId||null;callRate=parseFloat(opts.rate)||0;iAmClientFlag=!!opts.asClient;isInitiatorFlag=!!initiator;callCostTotal=0;callEarnTotal=0;callSeconds=0;callSetupDone=false;facingMode='user';offerSent=false;pendingCandidates=[];currentPolicy='all';peerPresent=false;gotAnswer=false;gotOffer=false;lastReconnectAt=0;callStartAt=Date.now();micOn=true;camOn=true;clientBalanceLocal=parseFloat(currentProfile.tokens_balance||0);
  const bm=document.getElementById('btnMic');if(bm){bm.textContent='🎤 Silenciar';bm.classList.remove('off');}
  const bc=document.getElementById('btnCam');if(bc){bc.textContent='📷 Encendida';bc.classList.remove('off');}
  document.getElementById('callTimer').textContent='00:00';
@@ -94,6 +100,7 @@ async function createOffer(){if(!pc)return;offerSent=true;try{const o=await pc.c
 async function handleSignal(p){if(!p||p.from===currentUser.id)return;
  if(p.silent&&p.type==='hello'){setupMonitorFor(p.from);return;}
  if(p.type==='bye-monitor'){if(monPc){monPc.close();monPc=null;}return;}
+ if(p.type==='lowtime'){showLow(p.seconds);return;}
  if(p.mon){if(p.to!==currentUser.id)return;if(p.type==='mon-answer'){monPc?.setRemoteDescription(p.sdp).catch(()=>{});return;}if(p.type==='mon-ice'){monPc?.addIceCandidate(p.candidate).catch(()=>{});return;}return;}
  if(p.type==='hello'||p.type==='helloAck'){const was=peerPresent;peerPresent=true;clearHello();if(!was)setChatState('💬 Chat conectado',true);if(!pc||pc.connectionState==='failed'||pc.connectionState==='closed')createPC(currentPolicy);if(p.type==='hello'&&!isInitiatorFlag){if(!gotOffer)startAckLoop();}if(isInitiatorFlag)startOfferLoop();return;}
  if(!pc)return;
@@ -111,12 +118,12 @@ function toggleMic(){const t=localStream?.getAudioTracks()[0];if(!t)return;micOn
 function toggleCam(){const t=localStream?.getVideoTracks()[0];if(!t)return;camOn=!camOn;t.enabled=camOn;const lv=document.getElementById('localVideo');if(lv)lv.classList.toggle('camoff',!camOn);const b=document.getElementById('btnCam');if(b){b.textContent=camOn?'📷 Encendida':'🚫 Apagada';b.classList.toggle('off',!camOn);}showToast(camOn?'📷 Encendida':'🚫 Apagada');}
 function appendCallChat(t,mine){const l=document.getElementById('callChatList');if(!l)return;l.insertAdjacentHTML('beforeend',`<div class="cc ${mine?'me':'them'}">${t}</div>`);l.scrollTop=l.scrollHeight;}
 function sendCallChat(){const i=document.getElementById('callChatInput');if(!i)return;const t=i.value.trim();if(!t||!callChannel)return;i.value='';appendCallChat(t,true);callChannel.send({type:'broadcast',event:'chatmsg',payload:{from:currentUser.id,text:t}});}
-// ===== RELOJ + COBRO POR SEGUNDO (cliente x2, modelo neto) =====
 function startCallClock(){if(callClock)return;callClock=setInterval(async()=>{callSeconds++;const t=document.getElementById('callTimer');if(t)t.textContent=String(Math.floor(callSeconds/60)).padStart(2,'0')+':'+String(callSeconds%60).padStart(2,'0');
- const clientPerSec=callRate*2/60, workerPerSec=callRate/60;
- callCostTotal+=clientPerSec; callEarnTotal+=workerPerSec;
+ const clientPerSec=callRate*2/60,workerPerSec=callRate/60;
+ callCostTotal+=clientPerSec;callEarnTotal+=workerPerSec;
  const cs=document.getElementById('callCost');if(cs)cs.textContent=(iAmClientFlag?'-◈ '+callCostTotal.toFixed(3):'+◈ '+callEarnTotal.toFixed(3));
- if(callRowId&&callSeconds%5===0){const{data:nb,error}=await db.rpc('tick_call',{p_call:callRowId,p_seconds:5});if(error||nb===-1){showToast('❌ Saldo insuficiente para continuar');await finishAndClose();return;}if(iAmClientFlag){currentProfile.tokens_balance=nb;updateHeader();}}},1000);}
+ if(iAmClientFlag){clientBalanceLocal-=clientPerSec;const remSec=Math.floor(clientBalanceLocal/clientPerSec);if(remSec<=10&&remSec>0){send({type:'lowtime',seconds:remSec});showLow(remSec);}}
+ if(callRowId&&callSeconds%5===0){const{data:nb,error}=await db.rpc('tick_call',{p_call:callRowId,p_seconds:5});if(error||nb===-1){showToast('❌ Saldo insuficiente para continuar');await finishAndClose();return;}if(iAmClientFlag){currentProfile.tokens_balance=nb;clientBalanceLocal=nb;updateHeader();}}},1000);}
 async function finishAndClose(){if(callRowId){const resid=callSeconds%5;await db.rpc('finish_call',{p_call:callRowId,p_seconds:resid});}cleanupCall();}
 async function endWebCall(){stopRing();if(callChannel){try{callChannel.send({type:'broadcast',event:'hangup',payload:{from:currentUser.id}});}catch(e){}}if(monPc){monPc.close();monPc=null;}await finishAndClose();showToast('📞 Llamada finalizada');}
-function cleanupCall(){stopRing();if(callClock){clearInterval(callClock);callClock=null;}if(watchdog){clearInterval(watchdog);watchdog=null;}clearHello();clearAck();clearOffer();teardownPC();if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}if(callChannel){try{db.removeChannel(callChannel);}catch(e){}callChannel=null;}callRoom=null;callRowId=null;callSetupDone=false;showNetHint(false);closeModal('modal-call');}
+function cleanupCall(){stopRing();hideLow();if(callClock){clearInterval(callClock);callClock=null;}if(watchdog){clearInterval(watchdog);watchdog=null;}clearHello();clearAck();clearOffer();teardownPC();if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}if(callChannel){try{db.removeChannel(callChannel);}catch(e){}callChannel=null;}callRoom=null;callRowId=null;callSetupDone=false;showNetHint(false);closeModal('modal-call');}

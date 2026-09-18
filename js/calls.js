@@ -17,9 +17,20 @@ function clearAck(){if(ackTimer){clearInterval(ackTimer);ackTimer=null;}}
 function clearOffer(){if(offerTimer){clearInterval(offerTimer);offerTimer=null;}}
 function startRing(){stopRing();try{const ctx=window._fendyxAudio||(window._fendyxAudio=new (window.AudioContext||window.webkitAudioContext)());ctx.resume?.();const beep=()=>{try{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0.0001,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.35,ctx.currentTime+0.05);g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.4);o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.45);}catch(e){}};beep();ringTimer=setInterval(beep,1200);}catch(e){}try{navigator.vibrate?.([400,200,400,200,400]);}catch(e){}}
 function stopRing(){if(ringTimer){clearInterval(ringTimer);ringTimer=null;}try{navigator.vibrate?.(0);}catch(e){}}
-// ===== Contador regresivo por saldo =====
 function showLow(sec){const b=document.getElementById('lowTimeBanner');const s=document.getElementById('lowTimeSec');if(!b)return;b.classList.remove('hidden');let v=sec;if(s)s.textContent=v;if(lowTimer)clearInterval(lowTimer);lowTimer=setInterval(()=>{v--;if(v<=0){clearInterval(lowTimer);lowTimer=null;b.innerHTML='💸 Saldo agotado: llamada finalizada';setTimeout(()=>b.classList.add('hidden'),2500);}else if(s)s.textContent=v;},1000);}
 function hideLow(){if(lowTimer){clearInterval(lowTimer);lowTimer=null;}const b=document.getElementById('lowTimeBanner');if(b)b.classList.add('hidden');}
+// ===== Rango VIP de la contraparte =====
+async function loadPeerVip(rowId){
+  if(!rowId)return;
+  try{
+    const{data:row}=await db.from('video_calls').select('client_id,worker_id').eq('id',rowId).single();
+    if(!row)return;
+    const otherId=iAmClientFlag?row.worker_id:row.client_id;
+    const{data:op}=await db.from('profiles').select('tokens_balance').eq('id',otherId).single();
+    const pv=document.getElementById('peerVip');
+    if(pv&&op)pv.innerHTML=userLevelBadge(op.tokens_balance);
+  }catch(e){}
+}
 function ensureCallUI(){if(document.getElementById('fendyx-call-style'))return;const st=document.createElement('style');st.id='fendyx-call-style';st.textContent=`
  .video-wrap{position:relative;height:calc(100vh - 300px);min-height:300px;background:#000;border-radius:16px;overflow:hidden;margin:10px 0}
  #remoteVideo{width:100%;height:100%;object-fit:cover;background:#000}
@@ -51,7 +62,7 @@ function ensureCallUI(){if(document.getElementById('fendyx-call-style'))return;c
  .am-tile span{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.6);padding:2px 8px;border-radius:999px;font-size:.72rem}`;document.head.appendChild(st);
  const mc=document.querySelector('#modal-call .modal-content');
  if(mc)mc.innerHTML=`
-  <div class="call-info"><span id="callTimer">00:00</span><span id="chatState" class="chat-state">💬 Chat no conectado</span><span id="callCost">◈ 0.00</span></div>
+  <div class="call-info"><span id="callTimer">00:00</span><span id="peerVip"></span><span id="chatState" class="chat-state">💬 Chat no conectado</span><span id="callCost">◈ 0.00</span></div>
   <div id="lowTimeBanner" class="low-time hidden">⏳ Se terminará en <b id="lowTimeSec">10</b> s por saldo</div>
   <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><video id="localVideo" autoplay playsinline muted></video>
    <div id="callStatusMsg" class="dim">🎥 Conectando video…</div>
@@ -68,7 +79,7 @@ async function changeCam(id){if(!id||!pc||!localStream)return;try{const ns=await
 async function changeMic(id){if(!id||!pc||!localStream)return;try{const ns=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:id}},video:false});applyAudioTrack(ns.getAudioTracks()[0]);showToast('🎤 Micrófono cambiado');}catch(e){showToast('❌ No se pudo');}}
 function applyVideoTrack(nt){currentDeviceId=nt.getSettings?.().deviceId||nt.id;const ot=localStream.getVideoTracks()[0];if(ot){ot.stop();localStream.removeTrack(ot);}localStream.addTrack(nt);const lv=document.getElementById('localVideo');if(lv){lv.srcObject=localStream;lv.play().catch(()=>{});}const s=pc.getSenders().find(s=>s.track&&s.track.kind==='video');if(s)s.replaceTrack(nt);}
 function applyAudioTrack(nt){currentMicId=nt.getSettings?.().deviceId||nt.id;const ot=localStream.getAudioTracks()[0];if(ot){ot.stop();localStream.removeTrack(ot);}localStream.addTrack(nt);const s=pc.getSenders().find(s=>s.track&&s.track.kind==='audio');if(s)s.replaceTrack(nt);}
-async function showIncomingCall(row){ensureCallUI();const{data:c}=await db.from('profiles').select('full_name, model_name').eq('id',row.client_id).single();const box=document.getElementById('incomingCall');if(!box)return;box.classList.remove('hidden');box.innerHTML=`<div><b>📞 ${c?.model_name||c?.full_name||'Llamada'}</b><small>◈ ${row.rate_per_minute}/min (tú ganas)</small></div><button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button><button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`;startRing();}
+async function showIncomingCall(row){ensureCallUI();const{data:c}=await db.from('profiles').select('full_name, model_name, tokens_balance').eq('id',row.client_id).single();const box=document.getElementById('incomingCall');if(!box)return;box.classList.remove('hidden');box.innerHTML=`<div><b>📞 ${c?.model_name||c?.full_name||'Llamada'}</b><small>◈ ${row.rate_per_minute}/min (tú ganas) · ${userLevelBadge(c?.tokens_balance)}</small></div><button class="btn-small success" onclick="acceptIncoming('${row.room_id}',${row.rate_per_minute},'${row.id}')">✅</button><button class="btn-small danger" onclick="rejectIncoming('${row.id}')">❌</button>`;startRing();}
 async function acceptIncoming(room,rate,rowId){stopRing();document.getElementById('incomingCall').classList.add('hidden');await joinWebCall(room,{rate:parseFloat(rate)||0,rowId,asClient:false});}
 async function rejectIncoming(rowId){stopRing();document.getElementById('incomingCall').classList.add('hidden');await db.from('video_calls').update({status:'ended',ended_at:new Date().toISOString()}).eq('id',rowId);}
 function remoteHungUp(row){stopRing();if(callRoom&&row.room_id===callRoom){showToast('📞 La otra persona colgó');cleanupCall();}}
@@ -78,8 +89,10 @@ async function beginCall(room,opts,initiator){ensureCallUI();armNetworkWatch();i
  const bm=document.getElementById('btnMic');if(bm){bm.textContent='🎤 Silenciar';bm.classList.remove('off');}
  const bc=document.getElementById('btnCam');if(bc){bc.textContent='📷 Encendida';bc.classList.remove('off');}
  document.getElementById('callTimer').textContent='00:00';
+ const pv0=document.getElementById('peerVip');if(pv0)pv0.innerHTML='';
  const cs=document.getElementById('callCost');if(cs){cs.style.display='';cs.style.color=iAmClientFlag?'var(--error)':'var(--success)';cs.textContent='◈ 0.00';}
  setChatState('💬 Chat no conectado',false);showNetHint(false);setStatus('📷 Solicitando cámara…');document.getElementById('callChatList').innerHTML='';document.getElementById('devicePanel')?.classList.add('hidden');openModal('modal-call');
+ loadPeerVip(callRowId);
  try{localStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'}},audio:{echoCancellation:true,noiseSuppression:true}});}catch(e){try{localStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});}catch(e2){showToast('❌ Permiso denegado');closeModal('modal-call');return;}}
  currentDeviceId=localStream.getVideoTracks()[0]?.getSettings?.().deviceId||null;currentMicId=localStream.getAudioTracks()[0]?.getSettings?.().deviceId||null;
  const lv=document.getElementById('localVideo');lv.srcObject=localStream;lv.muted=true;lv.classList.remove('camoff');lv.play().catch(()=>{});

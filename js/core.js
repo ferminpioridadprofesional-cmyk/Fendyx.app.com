@@ -2,6 +2,7 @@
 let currentUser=null,currentProfile=null,roleDetails=null,myLocation=null;
 let cart={restId:null,items:[]};
 let liveChannel=null,sharing=false,shareTimer=null;
+let _cameFromAdults=false;
 const loadedScripts={};
 window._modulesConfig={};window._adultModules=['girls'];window._turnConfig=null;window._turnConfigRaw=null;
 const LEVEL_META={1:{ico:'🥉',name:'Bronce',rate:0.2},2:{ico:'🥈',name:'Plata',rate:0.7},3:{ico:'🥇',name:'Oro',rate:1.2},4:{ico:'💠',name:'Platino',rate:2},5:{ico:'💎',name:'Diamante',rate:3}};
@@ -19,15 +20,15 @@ async function refreshTurn(){
     else if(raw.urls){ window._turnConfig={urls:raw.urls,username:raw.username,credential:raw.credential}; }
   }catch(e){}
 }
-const MODULE_DEFS=[{id:'map',n:'Mapa Social'},{id:'radar',n:'Radar Nocturno'},{id:'events',n:'Eventos'},{id:'restaurants',n:'Restaurantes'},{id:'reservations',n:'Reservas'},{id:'orders',n:'Pedidos'},{id:'marketplace',n:'Marketplace'},{id:'adults',n:' Área Adultos'},{id:'remote',n:'Trabajo'},{id:'delivery',n:'Zona Domiciliario'},{id:'chat',n:'Chat'}];
-const MODULE_ICONS={map:'',radar:'🌙',events:'🎪',restaurants:'🍽️',reservations:'📅',orders:'📦',marketplace:'🛒',adults:'',remote:'💼',delivery:'🛵',chat:'💬',tokens:'◈',admin:'🛡️',kyc:'🪪'};
-const ADULT_MODULE_NAMES={girls:'💃 Chicas',map:'📍 Mapa',radar:'🌙 Radar',chat:' Chat',events:'🎪 Eventos',marketplace:'🛒 Market',restaurants:'🍽️ Restaurantes',orders:'📦 Pedidos'};
+const MODULE_DEFS=[{id:'map',n:'Mapa Social'},{id:'radar',n:'Radar Nocturno'},{id:'events',n:'Eventos'},{id:'restaurants',n:'Restaurantes'},{id:'reservations',n:'Reservas'},{id:'orders',n:'Pedidos'},{id:'marketplace',n:'Marketplace'},{id:'adults',n:'🔞 Área Adultos'},{id:'remote',n:'Trabajo'},{id:'delivery',n:'Zona Domiciliario'},{id:'chat',n:'Chat'}];
+const MODULE_ICONS={map:'📍',radar:'🌙',events:'🎪',restaurants:'🍽️',reservations:'',orders:'📦',marketplace:'',adults:'🔞',remote:'💼',delivery:'🛵',chat:'💬',tokens:'◈',admin:'️',kyc:'🪪'};
+const ADULT_MODULE_NAMES={girls:'💃 Chicas',map:'📍 Mapa',radar:'🌙 Radar',chat:'💬 Chat',events:'🎪 Eventos',marketplace:' Market',restaurants:'🍽️ Restaurantes',orders:'📦 Pedidos'};
 const _pm={};
 function pmInit(id,kept,max){_pm[id]={kept:(kept||[]).slice(0,max),newFiles:[],max};}
 function pmState(id){return _pm[id]||{kept:[],newFiles:[]};}
 function pmTile(id,kind,i,src){return `<span class="pm-tile"><img src="${src}" alt=""><span class="pm-actions"><button type="button" class="pm-btn" title="Reemplazar" onclick="pmReplace('${id}','${kind}',${i})">🔄</button><button type="button" class="pm-btn del" title="Eliminar" onclick="pmRemove('${id}','${kind}',${i})">✕</button></span></span>`;}
 function pmRender(id){const c=_pm[id];const el=document.getElementById(id);if(!el||!c)return;const kept=c.kept.map((u,i)=>pmTile(id,'kept',i,u)).join('');const nw=c.newFiles.map((f,i)=>pmTile(id,'new',i,URL.createObjectURL(f))).join('');const left=c.max-(c.kept.length+c.newFiles.length);const add=left>0?`<label class="pm-add" title="Añadir foto">＋<input type="file" accept="image/*" multiple hidden onchange="pmAdd('${id}',this)"></label>`:'';el.innerHTML=kept+nw+add;}
-function pmAdd(id,input){const c=_pm[id];if(!c)return;for(const f of Array.from(input.files||[])){if(c.kept.length+c.newFiles.length>=c.max){showToast('⚠️ Máximo '+c.max+' fotos');break;}c.newFiles.push(f);}input.value='';pmRender(id);}
+function pmAdd(id,input){const c=_pm[id];if(!c)return;for(const f of Array.from(input.files||[])){if(c.kept.length+c.newFiles.length>=c.max){showToast('️ Máximo '+c.max+' fotos');break;}c.newFiles.push(f);}input.value='';pmRender(id);}
 function pmRemove(id,kind,i){const c=_pm[id];if(!c)return;if(kind==='kept')c.kept.splice(i,1);else c.newFiles.splice(i,1);pmRender(id);}
 function pmReplace(id,kind,i){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=()=>{const f=inp.files[0];if(!f)return;const c=_pm[id];if(!c)return;if(kind==='kept'){c.kept.splice(i,1);c.newFiles.push(f);}else{c.newFiles[i]=f;}pmRender(id);};inp.click();}
 function fbLabel(input){const lb=input.closest('.file-btn');if(lb){const t=lb.querySelector('.fb-txt');if(t)t.textContent=input.files&&input.files[0]?input.files[0].name:'Seleccionar archivo';}}
@@ -81,14 +82,15 @@ const TIER_CSS=`
  .adult-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;border-bottom:1px solid var(--border);padding-bottom:10px}
  .adult-tab{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:700;font-size:.85rem;transition:all .2s}
  .adult-tab:hover{background:rgba(255,255,255,.08)}
- .adult-tab.on{background:var(--gradient);color:#04060c;border-color:transparent;box-shadow:0 0 12px rgba(0,217,255,.4)}`;
+ .adult-tab.on{background:var(--gradient);color:#04060c;border-color:transparent;box-shadow:0 0 12px rgba(0,217,255,.4)}
+ @keyframes gFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`;
 document.addEventListener('DOMContentLoaded',async()=>{initPWA();await loadBranding();const isApp=!!document.getElementById('section-dashboard');const{data:{session}}=await db.auth.getSession();if(isApp){if(!session){location.replace('index.html');return;}currentUser=session.user;window._fendyxToken=session.access_token;await enterApp();}else if(session)location.replace('app.html');});
 function initPWA(){if(!document.querySelector('link[rel="manifest"]')){const l=document.createElement('link');l.rel='manifest';l.href='manifest.json';document.head.appendChild(l);const m=document.createElement('meta');m.name='theme-color';m.content='#00d9ff';document.head.appendChild(m);const a=document.createElement('link');a.rel='apple-touch-icon';a.href='icons/icon.svg';document.head.appendChild(a);}if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});const unlock=()=>{try{window._fendyxAudio=window._fendyxAudio||new (window.AudioContext||window.webkitAudioContext)();window._fendyxAudio.resume();}catch(e){}window.removeEventListener('pointerdown',unlock);};window.addEventListener('pointerdown',unlock);}
 function setWorkerOnlineDB(on){if(!currentUser)return Promise.resolve();if(currentProfile)currentProfile.is_online=on;return db.from('profiles').update({is_online:on}).eq('id',currentUser.id);}
 function beaconOffline(){const t=window._fendyxToken;if(!t||!currentUser)return;try{fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+currentUser.id,{method:'PATCH',keepalive:true,headers:{'apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+t,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({is_online:false})});}catch(e){}}
 function armPresence(){const intent=()=>localStorage.getItem('fendyx_online_intent')==='1';if(intent()&&!document.hidden)setWorkerOnlineDB(true);document.addEventListener('visibilitychange',()=>{if(document.hidden)setWorkerOnlineDB(false);else if(intent())setWorkerOnlineDB(true);});window.addEventListener('pagehide',beaconOffline);window.addEventListener('beforeunload',beaconOffline);}
 async function ensureAutoActive(){if(!currentProfile||currentProfile.role==='admin')return;const bal=parseFloat(currentProfile.tokens_balance||0);if(bal>=5&&!currentProfile.is_active){await db.from('profiles').update({is_active:true}).eq('id',currentUser.id);currentProfile.is_active=true;}}
-async function enterApp(){try{await loadProfile();if(!currentProfile)await repairProfile();if(!currentProfile){await db.auth.signOut();location.replace('index.html');return;}if(currentProfile.is_banned){localStorage.setItem('fendyx_ban_reason',currentProfile.ban_reason||'Sin razón');await db.auth.signOut();location.replace('index.html?banned=1');return;}injectDynamicUI();await ensureRoleDetails();await ensureAutoActive();await refreshTurn();setInterval(refreshTurn,6*3600*1000);window.addEventListener('online',refreshTurn);if(currentProfile.role==='remote_worker'){armPresence();if(currentProfile.kyc_status==='approved')loadScript('calls.js');}updateHeader();loadModules();const last=localStorage.getItem('fendyx_last_section');const valid=last&&LOADERS[last]&&((last!=='delivery'||currentProfile.role==='delivery')&&(last!=='adults'||currentProfile.kyc_status==='approved'||currentProfile.role==='admin')&&(last!=='remote'||currentProfile.role==='remote_worker')&&(last!=='kyc'||currentProfile.role==='remote_worker')&&(last!=='admin'||currentProfile.role==='admin'));showSection(valid?last:'dashboard');startRealtime();}catch(e){console.error(e);showToast('️ Error de carga: '+e.message);}}
+async function enterApp(){try{await loadProfile();if(!currentProfile)await repairProfile();if(!currentProfile){await db.auth.signOut();location.replace('index.html');return;}if(currentProfile.is_banned){localStorage.setItem('fendyx_ban_reason',currentProfile.ban_reason||'Sin razón');await db.auth.signOut();location.replace('index.html?banned=1');return;}injectDynamicUI();await ensureRoleDetails();await ensureAutoActive();await refreshTurn();setInterval(refreshTurn,6*3600*1000);window.addEventListener('online',refreshTurn);if(currentProfile.role==='remote_worker'){armPresence();if(currentProfile.kyc_status==='approved')loadScript('calls.js');}updateHeader();loadModules();const last=localStorage.getItem('fendyx_last_section');const valid=last&&LOADERS[last]&&((last!=='delivery'||currentProfile.role==='delivery')&&(last!=='adults'||currentProfile.kyc_status==='approved'||currentProfile.role==='admin')&&(last!=='remote'||currentProfile.role==='remote_worker')&&(last!=='kyc'||currentProfile.role==='remote_worker')&&(last!=='admin'||currentProfile.role==='admin'));showSection(valid?last:'dashboard');startRealtime();}catch(e){console.error(e);showToast('⚠️ Error de carga: '+e.message);}}
 async function repairProfile(){const{data}=await db.from('profiles').select('*').eq('id',currentUser.id).single();if(data){currentProfile=data;return;}const meta=JSON.parse(localStorage.getItem('fendyx_pending_meta')||'{}');const{data:c,error}=await db.from('profiles').insert({id:currentUser.id,email:currentUser.email,full_name:meta.full_name||'Usuario',role:meta.role||'user',age:meta.age||null,gender:meta.gender||null,referral_code:(currentUser.id||'').replace(/-/g,'').slice(0,8).toUpperCase(),tokens_balance:0,is_active:false}).select().single();if(!error)currentProfile=c;}
 async function loadProfile(){const{data}=await db.from('profiles').select('*').eq('id',currentUser.id).single();currentProfile=data;const{data:rd}=await db.from('role_details').select('*').eq('user_id',currentUser.id).single();roleDetails=rd;}
 async function ensureRoleDetails(){if(roleDetails)return;const meta=JSON.parse(localStorage.getItem('fendyx_pending_meta')||'{}');const{data}=await db.from('role_details').insert({user_id:currentUser.id,role_type:currentProfile.role,rif:meta.rif||null,business_name:meta.business_name||null,address:meta.address||null,license_number:meta.license||null,vehicle_plate:meta.plate||null,vehicle_type:meta.vehicle||null,specialty:meta.specialty||null,bio:meta.bio||null,rate_per_minute:currentProfile.role==='remote_worker'?0.2:null}).select().single();roleDetails=data;localStorage.removeItem('fendyx_pending_meta');}
@@ -116,39 +118,39 @@ function injectDynamicUI(){if(document.getElementById('fendyx-extra-style'))retu
    document.querySelector('.app-main').appendChild(ad);
  }
  const kyc=document.createElement('section');kyc.id='section-kyc';kyc.className='app-section';
- kyc.innerHTML=`<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div><form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar cédula</span><input type="file" id="kycIdCard" accept="image/*" hidden required onchange="fbLabel(this)"></label><label class="dim">🤳 Rostro</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar rostro</span><input type="file" id="kycFace" accept="image/*" hidden required onchange="fbLabel(this)"></label><button type="submit" class="btn-primary">Enviar</button></form>`;
+ kyc.innerHTML=`<div class="section-header"><h2>🪪 Mi Verificación</h2><button class="btn-back" onclick="showSection('dashboard')">← Volver</button></div><div id="kycStatusBox" class="owner-panel"></div><form class="owner-panel owner-form" onsubmit="submitKycDocs(event)"><input type="text" id="kycWhatsapp" placeholder="WhatsApp" required><label class="dim">📄 Cédula</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar cédula</span><input type="file" id="kycIdCard" accept="image/*" hidden required onchange="fbLabel(this)"></label><label class="dim"> Rostro</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar rostro</span><input type="file" id="kycFace" accept="image/*" hidden required onchange="fbLabel(this)"></label><button type="submit" class="btn-primary">Enviar</button></form>`;
  document.querySelector('.app-main').appendChild(kyc);
  const mc=document.querySelector('#modal-recharge .modal-content');
- if(mc)mc.innerHTML=`<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3). Con 5+ tu cuenta queda activa para siempre.</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance">🪙 Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura del pago</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar captura</span><input type="file" id="reqProof" accept="image/*" hidden onchange="fbLabel(this)"></label><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
+ if(mc)mc.innerHTML=`<div class="modal-head"><h3>◈ Solicitar recarga</h3><button class="modal-close" onclick="closeModal('modal-recharge')">✕</button></div><p class="dim">Mínimo 3 tokens ($3). Con 5+ tu cuenta queda activa para siempre.</p><div class="owner-form"><input type="number" id="reqAmount" placeholder="Monto (mín 3)" min="3"><select id="reqMethod"><option value="binance"> Binance Pay</option><option value="pago_movil">📱 Pago Móvil</option><option value="zelle">💵 Zelle</option></select><input type="text" id="reqRef" placeholder="Referencia / hash"><label class="dim">📸 Captura del pago</label><label class="file-btn">📎 <span class="fb-txt">Seleccionar captura</span><input type="file" id="reqProof" accept="image/*" hidden onchange="fbLabel(this)"></label><button type="button" class="btn-primary" onclick="submitRechargeRequest()">Enviar</button></div><h4 class="sub-title">Mis solicitudes</h4><div id="myRechargeList" class="list-compact"></div>`;
  const recBtn=document.querySelector('#section-tokens .row-buttons .btn-primary');
  if(recBtn)recBtn.onclick=async()=>{openModal('modal-recharge');await loadScript('tokens.js');loadMyRecharges();};
  const tabs=document.querySelector('.admin-tabs');
  const add=(key,label,html)=>{if(tabs&&!tabs.querySelector('[data-'+key+'-tab]')){tabs.insertAdjacentHTML('beforeend',`<button class="admin-tab" data-${key}-tab onclick="switchAdminTab('${key}',this)">${label}</button>`);const p=document.createElement('div');p.id='admin-'+key;p.className='admin-panel';p.innerHTML=html;document.getElementById('section-admin').appendChild(p);}};
- add('rates','💰 Tarifas','<p class="dim">Ganancia NETA de la modelo por minuto.</p><div id="levelsRateList" class="list-compact"></div>');
- add('vip',' Niveles VIP','<p class="dim">Saldo mínimo para cada máscara.</p><div id="vipLevelsList" class="list-compact"></div>');
+ add('rates',' Tarifas','<p class="dim">Ganancia NETA de la modelo por minuto.</p><div id="levelsRateList" class="list-compact"></div>');
+ add('vip','🎭 Niveles VIP','<p class="dim">Saldo mínimo para cada máscara.</p><div id="vipLevelsList" class="list-compact"></div>');
  add('cats','🎭 Categorías','<p class="dim">Renombra las 4 categorías y asigna cada modelo.</p><div id="catNamesList" class="list-compact"></div><h4 class="sub-title">Asignar modelos</h4><div id="catModelsList" class="list-compact"></div>');
  add('featured','⭐ Destacadas','<p class="dim">Top 3 modelos por categoría según calificaciones.</p><div class="row-buttons"><select class="btn-small" id="featFilter" onchange="setFeatPeriod(this.value)"><option value="dia">Diario</option><option value="semana">Semanal</option><option value="mes" selected>Mensual</option></select></div><div id="featList" class="list-compact"></div>');
  add('workers','💃 Trabajadoras','<p class="dim">Asigna nivel y tarifa individual.</p><div id="adminWorkersList" class="list-compact"></div>');
  add('recharges','💳 Recargas','<div id="rechargeRequestsList" class="list-compact"></div>');
  add('earnings','💵 Ganancias App','<div class="row-buttons"><select class="btn-small" id="earnFilter" onchange="setEarnPeriod(this.value)"><option value="hoy">Hoy</option><option value="semana">Última semana</option><option value="quincena" selected>Última quincena</option><option value="todo">Todo</option></select></div><div id="earnKpis" class="row-buttons" style="flex-wrap:wrap"></div><div id="earnBreak" class="list-compact"></div><div id="earnList" class="list-compact"></div>');
  add('payouts','💸 Pagos','<p class="dim">Lo que la app debe pagar por retiros (días 15 y 30).</p><div class="row-buttons"><select class="btn-small" id="payFilter" onchange="setPayPeriod(this.value)"><option value="hoy">Hoy</option><option value="semana">Última semana</option><option value="quincena" selected>Última quincena</option><option value="todo">Todo</option></select></div><div id="payKpis" class="row-buttons" style="flex-wrap:wrap"></div><div id="payOwed" class="list-compact"></div><div id="payList" class="list-compact"></div>');
- add('turn',' TURN','<p class="dim">Servidor TURN (Metered/Cloudflare/propio).</p><div class="owner-form"><label class="dim">URL Worker Cloudflare (opcional)</label><input type="text" id="turnUrl" placeholder="https://xxx.workers.dev"><label class="dim">URLs TURN (separadas por coma)</label><input type="text" id="turnUrls" placeholder="turn:global.relay.metered.ca:80, ..."><label class="dim">Usuario</label><input type="text" id="turnUser"><label class="dim">Credencial</label><input type="text" id="turnCred"><button class="btn-primary" onclick="saveTurnConfig()">💾 Guardar TURN</button><p class="dim" id="turnStatus" style="margin-top:8px"></p></div>');
+ add('turn','📡 TURN','<p class="dim">Servidor TURN (Metered/Cloudflare/propio).</p><div class="owner-form"><label class="dim">URL Worker Cloudflare (opcional)</label><input type="text" id="turnUrl" placeholder="https://xxx.workers.dev"><label class="dim">URLs TURN (separadas por coma)</label><input type="text" id="turnUrls" placeholder="turn:global.relay.metered.ca:80, ..."><label class="dim">Usuario</label><input type="text" id="turnUser"><label class="dim">Credencial</label><input type="text" id="turnCred"><button class="btn-primary" onclick="saveTurnConfig()">💾 Guardar TURN</button><p class="dim" id="turnStatus" style="margin-top:8px"></p></div>');
  add('adultcfg','🔞 Área Adultos','<p class="dim">Elige qué módulos viven DENTRO del Área Adultos +18.</p><div id="adultModsList" class="list-compact"></div>');
  add('safety','🚨 Seguridad','<h3 class="sub-title">🆘 Pánico</h3><div id="panicList" class="list-compact"></div><h3 class="sub-title">🚩 Reportes</h3><div id="reportsList" class="list-compact"></div>');
- add('modules',' Apartados','<p class="dim">Activa, marca "próximamente" u oculta cada apartado.</p><div id="modulesConfigList" class="list-compact"></div>');
- add('supervision','👁 Supervisión','<p class="dim">Llamadas en vivo. Mosaico invisible.</p><div id="liveCallsList" class="list-compact"></div>');}
+ add('modules','🧩 Apartados','<p class="dim">Activa, marca "próximamente" u oculta cada apartado.</p><div id="modulesConfigList" class="list-compact"></div>');
+ add('supervision',' Supervisión','<p class="dim">Llamadas en vivo. Mosaico invisible.</p><div id="liveCallsList" class="list-compact"></div>');}
 async function sendPanic(context,callId){const pos=await getPos();await db.from('panic_alerts').insert({user_id:currentUser.id,context:context||'general',call_id:callId||null,latitude:pos?.lat||null,longitude:pos?.lng||null});navigator.vibrate?.([400,150,400]);showToast('🆘 Alerta enviada al administrador');}
-async function reportUser(targetId,reason){await db.from('reports').insert({reporter_id:currentUser.id,target_user_id:targetId,type:'user',detail:reason});showToast('🚩 Reporte enviado');}
+async function reportUser(targetId,reason){await db.from('reports').insert({reporter_id:currentUser.id,target_user_id:targetId,type:'user',detail:reason});showToast(' Reporte enviado');}
 function requireActive(){return true;}
-function requireBalance(min){if(currentProfile.role==='admin'||currentProfile.unlimited_tokens)return true;const b=parseFloat(currentProfile.tokens_balance||0);if(b<min){showToast(' Saldo insuficiente. Recarga para continuar.');showSection('tokens');return false;}return true;}
+function requireBalance(min){if(currentProfile.role==='admin'||currentProfile.unlimited_tokens)return true;const b=parseFloat(currentProfile.tokens_balance||0);if(b<min){showToast('◈ Saldo insuficiente. Recarga para continuar.');showSection('tokens');return false;}return true;}
 function showLocked(name){showToast('🔒 '+name+' estará disponible próximamente.');}
 function toggleUserMenu(){document.getElementById('userMenu')?.classList.toggle('hidden');}
 document.addEventListener('click',e=>{if(!e.target.closest('.user-avatar')&&!e.target.closest('.user-menu')&&!e.target.closest('.header-left'))document.getElementById('userMenu')?.classList.add('hidden');});
-function buildUserMenu(){const m=document.getElementById('userMenu');if(!m)return;let h=`<div class="menu-item" onclick="showSection('profile')">👤 Mi Perfil</div>`;if(currentProfile.role==='remote_worker')h+=`<div class="menu-item" onclick="showSection('profileedit')">✏️ Perfil Pro</div>`;if(currentProfile.role==='admin')h+=`<div class="menu-item" onclick="showSection('admin')">️ Panel Admin</div>`;h+=`<div class="menu-item logout" onclick="handleLogout()">🚪 Cerrar Sesión</div>`;m.innerHTML=h;}
+function buildUserMenu(){const m=document.getElementById('userMenu');if(!m)return;let h=`<div class="menu-item" onclick="showSection('profile')">👤 Mi Perfil</div>`;if(currentProfile.role==='remote_worker')h+=`<div class="menu-item" onclick="showSection('profileedit')">✏️ Perfil Pro</div>`;if(currentProfile.role==='admin')h+=`<div class="menu-item" onclick="showSection('admin')">🛡️ Panel Admin</div>`;h+=`<div class="menu-item logout" onclick="handleLogout()">🚪 Cerrar Sesión</div>`;m.innerHTML=h;}
 function updateHeader(){if(!currentProfile)return;const t=document.getElementById('userTokens');if(t)t.textContent=currentProfile.unlimited_tokens?'∞':parseFloat(currentProfile.tokens_balance||0).toFixed(2);const av=document.getElementById('userAvatar');if(av)av.textContent=(currentProfile.full_name||'U').charAt(0).toUpperCase();const w=document.getElementById('welcomeName');if(w)w.textContent=(currentProfile.full_name||'Usuario').split(' ')[0];const wr=document.getElementById('welcomeRole');if(wr)wr.textContent='Rol: '+(ROLE_LABELS[currentProfile.role]||'Usuario');document.getElementById('btnJoinKyc')?.classList.toggle('hidden',!!currentProfile.is_verified);buildUserMenu();}
 async function handleLogout(){if(shareTimer)clearInterval(shareTimer);sharing=false;if(currentProfile?.role==='remote_worker'){localStorage.setItem('fendyx_online_intent','0');beaconOffline();}localStorage.removeItem('fendyx_last_section');await db.auth.signOut();location.replace('index.html');}
 function moduleState(id){return (window._modulesConfig||{})[id]||'on';}
-function buildBottomNav(){const nav=document.querySelector('.bottom-nav');if(!nav)return;const adultMods=window._adultModules||['girls'];const items=[{id:'dashboard',ico:'🏠',n:'Inicio'},{id:'map',ico:'📍',n:'Mapa'},{id:'radar',ico:'🌙',n:'Radar'},{id:'chat',ico:'💬',n:'Chat'},{id:'tokens',ico:'◈',n:'Tokens'}];nav.innerHTML=items.filter(it=>moduleState(it.id)!=='hidden'&&!adultMods.includes(it.id)).map(it=>{const st=moduleState(it.id);return `<button class="nav-item" data-nav="${it.id}" onclick="${st==='off'?`showLocked('${it.n}')`:`showSection('${it.id}')`}"><span class="nav-icon">${it.ico}</span><span class="nav-label">${it.n}</span></button>`;}).join('');}
+function buildBottomNav(){const nav=document.querySelector('.bottom-nav');if(!nav)return;const adultMods=window._adultModules||['girls'];const items=[{id:'dashboard',ico:'🏠',n:'Inicio'},{id:'map',ico:'',n:'Mapa'},{id:'radar',ico:'🌙',n:'Radar'},{id:'chat',ico:'💬',n:'Chat'},{id:'tokens',ico:'',n:'Tokens'}];nav.innerHTML=items.filter(it=>moduleState(it.id)!=='hidden'&&!adultMods.includes(it.id)).map(it=>{const st=moduleState(it.id);return `<button class="nav-item" data-nav="${it.id}" onclick="${st==='off'?`showLocked('${it.n}')`:`showSection('${it.id}')`}"><span class="nav-icon">${it.ico}</span><span class="nav-label">${it.n}</span></button>`;}).join('');}
 function loadModules(){
   const role=currentProfile.role;
   const adultMods=window._adultModules||['girls'];
@@ -178,86 +180,50 @@ function renderAdultTabs(){
   const contentEl=document.getElementById('adultContent');
   const gateEl=document.getElementById('adultsGate');
   if(!tabsEl||!contentEl)return;
-  
   const adultMods=window._adultModules||['girls'];
   const ok=currentProfile.role==='admin'||currentProfile.kyc_status==='approved';
-  
-  // Gate de verificación
   if(!ok){
-    gateEl.innerHTML=`<div class="req-gate"><h3>🔞 Área exclusiva para adultos verificados</h3><p class="dim">Debes completar tu <b>verificación de identidad (KYC)</b> para entrar.</p><div class="row-buttons" style="justify-content:center"><button class="btn-primary" onclick="showSection('profile')">🪪 Verificarme ahora</button></div></div>`;
-    tabsEl.innerHTML='';
-    contentEl.innerHTML='';
-    return;
+    gateEl.innerHTML=`<div class="req-gate"><h3>🔞 Área exclusiva para adultos verificados</h3><p class="dim">Debes completar tu <b>verificación de identidad (KYC)</b> para entrar.</p><div class="row-buttons" style="justify-content:center"><button class="btn-primary" onclick="showSection('profile')"> Verificarme ahora</button></div></div>`;
+    tabsEl.innerHTML='';contentEl.innerHTML='';return;
   }
   gateEl.innerHTML='';
-  
-  // Renderizar pestañas
   tabsEl.innerHTML=adultMods.map(m=>`<button class="adult-tab ${_currentAdultTab===m?'on':''}" onclick="switchAdultTab('${m}')">${ADULT_MODULE_NAMES[m]||m}</button>`).join('');
-  
-  // Cargar contenido de la pestaña activa
   loadAdultTabContent(_currentAdultTab);
 }
-function switchAdultTab(tab){
-  _currentAdultTab=tab;
-  renderAdultTabs();
-}
+function switchAdultTab(tab){_currentAdultTab=tab;renderAdultTabs();}
+
+// Función global para entrar al módulo desde el Área Adultos
+window.enterAdultModule=function(tab){
+  _cameFromAdults=true;
+  showSection(tab);
+};
+
 async function loadAdultTabContent(tab){
   const contentEl=document.getElementById('adultContent');
   if(!contentEl)return;
-  contentEl.innerHTML='<p class="dim" style="text-align:center;padding:20px">Cargando…</p>';
-  
   if(tab==='girls'){
     await loadScript('remote.js');
-    if(typeof loadAdults==='function'){
-      await loadAdults();
-    }
-  }else if(tab==='map'){
-    await loadScript('map.js');
-    if(typeof initMap==='function'){
-      contentEl.innerHTML='<div id="map" style="height:500px;border-radius:12px;overflow:hidden"></div>';
-      initMap();
-      autoLocate();
-      loadMapUsers();
-    }
-  }else if(tab==='radar'){
-    await loadScript('radar.js');
-    if(typeof loadRadar==='function'){
-      contentEl.innerHTML='<div id="radar-content"></div>';
-      loadRadar();
-    }
-  }else if(tab==='chat'){
-    await loadScript('chat.js');
-    if(typeof loadConversations==='function'){
-      contentEl.innerHTML='<div id="chat-content"></div>';
-      loadConversations();
-    }
-  }else if(tab==='events'){
-    await loadScript('radar.js');
-    if(typeof loadEvents==='function'){
-      contentEl.innerHTML='<div id="events-content"></div>';
-      loadEvents();
-    }
-  }else if(tab==='marketplace'){
-    await loadScript('market.js');
-    if(typeof loadMarketplace==='function'){
-      contentEl.innerHTML='<div id="market-content"></div>';
-      loadMarketplace();
-    }
-  }else if(tab==='restaurants'){
-    await loadScript('restaurants.js');
-    if(typeof loadRestaurants==='function'){
-      contentEl.innerHTML='<div id="restaurants-content"></div>';
-      loadRestaurants();
-    }
-  }else if(tab==='orders'){
-    await loadScript('orders.js');
-    if(typeof loadOrders==='function'){
-      contentEl.innerHTML='<div id="orders-content"></div>';
-      loadOrders();
-    }
-  }else{
-    contentEl.innerHTML=`<p class="dim">Módulo "${tab}" no disponible</p>`;
+    if(typeof loadAdults==='function')await loadAdults();
+    return;
   }
+  const moduleInfo={
+    map:{icon:'📍',name:'Mapa Social',desc:'Explora usuarios cercanos en tiempo real'},
+    radar:{icon:'',name:'Radar Nocturno',desc:'Descubre la vida nocturna de tu ciudad'},
+    chat:{icon:'💬',name:'Chat',desc:'Mensajes en tiempo real con otros usuarios'},
+    events:{icon:'🎪',name:'Eventos',desc:'Próximos eventos y actividades'},
+    marketplace:{icon:'🛒',name:'Marketplace',desc:'Compra y vende productos'},
+    restaurants:{icon:'️',name:'Restaurantes',desc:'Descubre los mejores lugares'},
+    orders:{icon:'',name:'Pedidos',desc:'Sistema de pedidos y entregas'}
+  };
+  const info=moduleInfo[tab]||{icon:'',name:tab,desc:'Módulo disponible'};
+  contentEl.innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center">
+      <div style="font-size:4rem;margin-bottom:16px;animation:gFloat 2s ease-in-out infinite">${info.icon}</div>
+      <h2 style="margin:0 0 8px 0;font-size:1.5rem">${info.name}</h2>
+      <p class="dim" style="margin:0 0 24px 0;max-width:400px">${info.desc}</p>
+      <button class="btn-primary" style="padding:12px 32px;font-size:1rem" onclick="enterAdultModule('${tab}')">🚪 Entrar al módulo</button>
+      <p class="dim" style="margin-top:16px;font-size:.8rem">Se abrirá en pantalla completa · Usa ← para volver</p>
+    </div>`;
 }
 
 async function showSection(name){
@@ -265,8 +231,7 @@ async function showSection(name){
   if(name==='adults'||adultMods.includes(name)){
     if(currentProfile.role!=='admin'&&currentProfile.kyc_status!=='approved'){
       showToast('🔞 Área +18: requiere verificación de identidad aprobada');
-      showSection('dashboard');
-      return;
+      showSection('dashboard');return;
     }
   }
   const def=MODULE_DEFS.find(d=>d.id===name);
@@ -278,20 +243,30 @@ async function showSection(name){
   document.querySelectorAll('.bottom-nav .nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===name));
   if(MODULE_FILES[name])await loadScript(MODULE_FILES[name]);
   if(LOADERS[name]){try{await LOADERS[name]();}catch(e){console.error(e);}}
-  // Si es Área Adultos, renderizar pestañas
   if(name==='adults'){
     _currentAdultTab='girls';
+    _cameFromAdults=false;
     setTimeout(()=>renderAdultTabs(),100);
+  }
+  if(_cameFromAdults&&name!=='adults'){
+    setTimeout(()=>{
+      document.querySelectorAll('.btn-back').forEach(btn=>{
+        if(btn.textContent.includes('Volver')||btn.textContent.includes('←')){
+          btn.onclick=(e)=>{e.preventDefault();_cameFromAdults=false;showSection('adults');};
+          btn.textContent='← Área Adultos';
+        }
+      });
+    },200);
   }
 }
 function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
-function getPos(){return new Promise(res=>{if(!navigator.geolocation)return res(null);const opts=isIOS()?{enableHighAccuracy:false,timeout:15000,maximumAge:30000}:{enableHighAccuracy:true,timeout:10000,maximumAge:0};navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),err=>{if(err.code===1){showToast(isIOS()?' iOS: Ajustes → Privacidad → Localización → Safari → permitir':'📍 Permiso denegado');return res(null);}navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),()=>res(null),{enableHighAccuracy:!opts.enableHighAccuracy,timeout:15000,maximumAge:60000});},opts);});}
-async function toggleShareLocation(){const btn=document.getElementById('btnShareLocation');if(sharing){sharing=false;if(shareTimer)clearInterval(shareTimer);await db.from('user_locations').update({is_sharing:false}).eq('user_id',currentUser.id);if(btn)btn.textContent='📡 Compartir ubicación';showToast('📴 Dejaste de compartir');return;}const first=await getPos();if(!first)return;sharing=true;myLocation=first;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:first.lat,longitude:first.lng,is_sharing:true},{onConflict:'user_id'});if(btn)btn.textContent='🔴 EN VIVO (tocar para parar)';if(map)map.setView([first.lat,first.lng],14);loadMapUsers();shareTimer=setInterval(async()=>{const p=await getPos();if(!p||!sharing)return;myLocation=p;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:p.lat,longitude:p.lng,is_sharing:true},{onConflict:'user_id'});loadMapUsers();},6000);showToast(' Compartiendo ubicación');}
+function getPos(){return new Promise(res=>{if(!navigator.geolocation)return res(null);const opts=isIOS()?{enableHighAccuracy:false,timeout:15000,maximumAge:30000}:{enableHighAccuracy:true,timeout:10000,maximumAge:0};navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),err=>{if(err.code===1){showToast(isIOS()?'📍 iOS: Ajustes → Privacidad → Localización → Safari → permitir':' Permiso denegado');return res(null);}navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),()=>res(null),{enableHighAccuracy:!opts.enableHighAccuracy,timeout:15000,maximumAge:60000});},opts);});}
+async function toggleShareLocation(){const btn=document.getElementById('btnShareLocation');if(sharing){sharing=false;if(shareTimer)clearInterval(shareTimer);await db.from('user_locations').update({is_sharing:false}).eq('user_id',currentUser.id);if(btn)btn.textContent='📡 Compartir ubicación';showToast('📴 Dejaste de compartir');return;}const first=await getPos();if(!first)return;sharing=true;myLocation=first;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:first.lat,longitude:first.lng,is_sharing:true},{onConflict:'user_id'});if(btn)btn.textContent='🔴 EN VIVO (tocar para parar)';if(map)map.setView([first.lat,first.lng],14);loadMapUsers();shareTimer=setInterval(async()=>{const p=await getPos();if(!p||!sharing)return;myLocation=p;await db.from('user_locations').upsert({user_id:currentUser.id,latitude:p.lat,longitude:p.lng,is_sharing:true},{onConflict:'user_id'});loadMapUsers();},6000);showToast('📡 Compartiendo ubicación');}
 function autoLocate(){if(!sharing)toggleShareLocation();}
 function haversine(a,b,c,d){const R=6371000,t=x=>x*Math.PI/180;const dLa=t(c-a),dLo=t(d-b);const h=Math.sin(dLa/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dLo/2)**2;return R*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));}
 function fmtDist(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(1)+' km';}
 function stars(r){const n=Math.round(parseFloat(r)||0);return '★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);}
-function driverLevel(n){return n>=150?'💎 Élite':n>=50?'🥇 Experto':n>=10?'🥈 Confiable':'🥉 Nuevo';}
+function driverLevel(n){return n>=150?'💎 Élite':n>=50?' Experto':n>=10?' Confiable':'🥉 Nuevo';}
 function openModal(id){document.getElementById(id)?.classList.remove('hidden');}
 function closeModal(id){document.getElementById(id)?.classList.add('hidden');}
 function showToast(msg){const t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.classList.remove('hidden');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.add('hidden'),2800);}

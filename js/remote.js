@@ -1,9 +1,9 @@
 'use strict';
-let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;let _girlTab=1;let _adultTab='girls';
-const DEFAULT_GIRL_CATS=[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
+let _girlsList=[];let wkLbUrls=[],wkLbIdx=0,wkLbX=0;
 const _we={interests:new Set(),preferences:new Set(),zodiac:null};
+const CAT_ORDER=[{id:4,name:'⭐ Modelos Destacadas'},{id:3,name:'💎 Modelos'},{id:2,name:'🌙 Medias'},{id:1,name:'🌸 Inicial'}];
+const DEFAULT_GIRL_CATS=[{id:1,name:'Inicial'},{id:2,name:'Medias'},{id:3,name:'Modelos'},{id:4,name:'Modelos Destacadas'}];
 function girlCats(){return window._girlCategories||DEFAULT_GIRL_CATS;}
-async function loadGirlCats(){try{const{data}=await db.from('app_branding').select('girl_categories').eq('id',1).single();window._girlCategories=data?.girl_categories||DEFAULT_GIRL_CATS;}catch(e){window._girlCategories=DEFAULT_GIRL_CATS;}}
 function isNewGirl(created){if(!created)return false;return (Date.now()-new Date(created).getTime())<=3*24*60*60*1000;}
 function toggleWChip(el,g,v){const s=_we[g];if(s.has(v)){s.delete(v);el.classList.remove('active');}else{s.add(v);el.classList.add('active');}}
 function pickWZodiac(el,v){_we.zodiac=v;document.querySelectorAll('.wz-chip').forEach(z=>z.classList.remove('active'));el.classList.add('active');}
@@ -11,6 +11,27 @@ function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))retur
  @keyframes gFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
  @keyframes gShine{0%{background-position:-200% 0}100%{background-position:200% 0}}
  @keyframes gPulse{0%,100%{box-shadow:0 0 6px rgba(0,255,157,.4)}50%{box-shadow:0 0 16px rgba(0,255,157,.8)}}
+ @keyframes gSpin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+ .adult-section{margin:16px 0;padding:14px;border-radius:18px;background:rgba(255,255,255,.02);border:1px solid var(--border)}
+ .adult-section h3{margin:0 0 12px 0;font-size:1.1rem;display:flex;align-items:center;gap:8px}
+ .adult-section h3 .cat-badge{font-size:.7rem;padding:3px 10px;border-radius:999px;background:var(--gradient);color:#04060c;font-weight:800}
+ .girls-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+ @media(max-width:768px){.girls-row{grid-template-columns:repeat(2,1fr);}}
+ .girl-card-sm{padding:10px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--border);position:relative;transition:transform .18s,box-shadow .18s;cursor:pointer}
+ .girl-card-sm:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.4)}
+ .girl-card-sm .sm-photo{width:100%;height:110px;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+ .girl-card-sm .sm-photo img{width:100%;height:100%;object-fit:cover;object-position:center}
+ .girl-card-sm .sm-name{font-weight:800;font-size:.85rem;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .girl-card-sm .sm-meta{display:flex;justify-content:space-between;align-items:center;font-size:.72rem;color:var(--dim);margin-bottom:6px}
+ .girl-card-sm .sm-stars{color:#ffd700;font-size:.78rem}
+ .girl-card-sm .sm-rate{color:var(--primary);font-weight:800}
+ .girl-card-sm .sm-btns{display:flex;gap:4px}
+ .girl-card-sm .sm-btns button{flex:1;padding:5px;font-size:.72rem;border-radius:8px}
+ .new-tag-sm{position:absolute;top:6px;left:6px;background:linear-gradient(100deg,#00ff9d,#00d9ff);color:#042;font-weight:900;font-size:.6rem;padding:2px 8px;border-radius:999px;animation:gPulse 1.6s infinite;z-index:2;letter-spacing:1px}
+ .see-more-btn{display:block;margin:12px auto 0;padding:8px 20px;border-radius:999px;background:rgba(0,217,255,.12);border:1px solid var(--primary);color:var(--primary);font-weight:800;font-size:.85rem;cursor:pointer;transition:all .2s}
+ .see-more-btn:hover{background:var(--primary);color:#04060c;transform:translateY(-2px)}
+ .mosaic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:10px 0}
+ @media(max-width:768px){.mosaic-grid{grid-template-columns:repeat(2,1fr);}}
  .girl-card{padding:14px;position:relative;transition:transform .18s ease,box-shadow .18s ease}
  .girl-card:hover{transform:translateY(-4px);box-shadow:0 10px 26px rgba(0,0,0,.45)}
  .new-tag{position:absolute;top:8px;left:8px;background:linear-gradient(100deg,#00ff9d,#00d9ff);color:#042;font-weight:900;font-size:.7rem;padding:4px 12px;border-radius:999px;animation:gPulse 1.6s infinite;z-index:2;letter-spacing:1px}
@@ -18,10 +39,6 @@ function injectGirlStyle(){if(document.getElementById('fendyx-girl-style'))retur
  .adult-tab{position:relative;padding:10px 18px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:800;font-size:.9rem;overflow:hidden;transition:all .2s}
  .adult-tab:hover{transform:translateY(-2px);border-color:var(--primary)}
  .adult-tab.on{background:linear-gradient(100deg,#ff2d95,#7b2bff,#00d9ff);background-size:200%;color:#fff;border-color:transparent;animation:gShine 2.5s linear infinite;box-shadow:0 0 16px rgba(255,45,149,.5)}
- .cat-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
- .cat-tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;font-weight:700;font-size:.85rem;transition:all .2s}
- .cat-tab:hover{transform:translateY(-2px)}
- .cat-tab.on{background:var(--gradient);color:#04060c;border-color:transparent;box-shadow:0 0 12px rgba(0,217,255,.4)}
  .girl-photo{width:64%;max-width:210px;height:170px;margin:0 auto;border-radius:14px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border)}
  .girl-photo img{width:100%;height:100%;object-fit:contain;object-position:center;transition:transform .25s}
  .girl-card:hover .girl-photo img{transform:scale(1.05)}
@@ -70,6 +87,25 @@ window._rwRenderProfile=async function(userId,preview){const{data}=await db.from
 async function openWorkerProfile(id){await window._rwRenderProfile(id,false);}
 async function previewWorkerProfile(){await window._rwRenderProfile(currentUser.id,true);}
 async function openGirlGallery(idx,i){const g=(_girlsList[idx]?.gallery)||[];if(!g.length)return;wkOpenLightbox(g,i);}
+
+// ===== Card pequeña (4 por fila) =====
+function girlCardSmall(w){
+  const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_level)||1));
+  const clientRate=parseFloat(w.client_rate)||2;
+  const name=w.display_name||'Modelo';
+  const mainPhoto=w.avatar_url||(w.gallery||[])[0]||'';
+  const stars=parseFloat(w.avg_rating||w.rating||5).toFixed(1);
+  return `<div class="girl-card-sm tier-${lvNum}">
+   ${isNewGirl(w.created_at)?'<span class="new-tag-sm">NEW</span>':''}
+   <div class="sm-photo" onclick="openWorkerProfile('${w.id}')">${mainPhoto?`<img src="${mainPhoto}">`:`<span class="girl-initial">${name.charAt(0)}</span>`}</div>
+   <div class="sm-name">${name}${w.age?', '+w.age:''}</div>
+   <div class="sm-meta"><span class="sm-stars">⭐ ${stars}</span><span class="sm-rate">◈ ${clientRate}/min</span></div>
+   <div class="sm-btns">
+     <button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤</button>
+     <button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹</button>
+   </div></div>`;}
+
+// ===== Card grande (mosaico interno) =====
 function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_level)||1));const clientRate=parseFloat(w.client_rate)||2;const name=w.display_name||'Modelo';const gallery=w.gallery||[];const mainPhoto=w.avatar_url||gallery[0]||'';return `<div class="card-item girl-card tier-${lvNum}">
  ${isNewGirl(w.created_at)?'<span class="new-tag">NEW</span>':''}
  <div class="girl-photo" onclick="openGirlGallery(${idx},0)">${mainPhoto?`<img src="${mainPhoto}" alt="">`:`<span class="girl-initial">${name.charAt(0).toUpperCase()}</span>`}</div>
@@ -79,39 +115,60 @@ function girlCard(w,idx){const lvNum=Math.min(5,Math.max(1,parseInt(w.worker_lev
  <span class="role-badge">◈ ${clientRate}/min</span> <span class="dim">⭐ ${parseFloat(w.rating||5).toFixed(1)}</span>
  <div class="chips-row" style="margin:6px 0">${(w.interests||[]).slice(0,3).map(i=>`<span class="chip">🎯 ${i}</span>`).join('')}</div>
  <div class="row-actions"><button class="btn-small" onclick="openWorkerProfile('${w.id}')">👤 Ver perfil</button><button class="btn-small success" onclick="startCall('${w.id}',${parseFloat(w.rate)||1})" ${w.is_online?'':'disabled'}>📹 Llamar</button></div></div>`;}
-async function fetchPublicWorkers(){const{data,error}=await db.rpc('get_public_workers');if(error){showToast('❌ '+error.message);return[];}return (typeof data==='string'?JSON.parse(data):data)||[];}
-function setGirlTab(n){_girlTab=n;renderGirlsGrid();}
-function renderGirlsGrid(){const grid=document.getElementById('girlsGrid');const cats=girlCats();const tabsEl=document.getElementById('girlCatTabs');if(tabsEl)tabsEl.innerHTML=cats.map(c=>`<button class="cat-tab ${_girlTab===c.id?'on':''}" onclick="setGirlTab(${c.id})">${c.name}</button>`).join('');const list=_girlsList.filter(w=>(w.girl_category||1)===_girlTab);grid.innerHTML=list.map(w=>girlCard(w,_girlsList.indexOf(w))).join('')||'<p class="empty-state">No hay chicas en esta categoría</p>';}
-async function loadGirls(){injectGirlStyle();await loadGirlCats();const gate=document.getElementById('girlsGate');const grid=document.getElementById('girlsGrid');if(gate)gate.innerHTML='';_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
-// ===== ÁREA ADULTOS +18 =====
-const ADULT_NAMES={girls:'💃 Chicas',map:'📍 Mapa',radar:'🌙 Radar',chat:'💬 Chat',events:'🎪 Eventos',marketplace:'🛒 Market',restaurants:'🍽️ Restaurantes',orders:'📦 Pedidos'};
-function setAdultTab(m){_adultTab=m;if(m!=='girls'){showSection(m);return;}loadAdults();}
+
+// ===== Sección de categoría con 4 top + botón "Ver más" =====
+function renderCategorySection(catId,catName,models){
+  const top4=models.slice(0,4);
+  const hasMore=models.length>4;
+  return `<div class="adult-section">
+   <h3>${catName} <span class="cat-badge">${top4.length} modelos</span></h3>
+   ${top4.length?`<div class="girls-row">${top4.map(w=>girlCardSmall(w)).join('')}</div>`:'<p class="dim" style="text-align:center;padding:20px">Sin modelos en esta categoría aún</p>'}
+   ${hasMore?`<button class="see-more-btn" onclick="loadCategoryFull(${catId},'${catName.replace(/'/g,"\\'")}')">✨ Ver todas las modelos de ${catName} (${models.length})</button>`:''}
+  </div>`;}
+
+// ===== Carga Área Adultos completa =====
 async function loadAdults(){
   injectGirlStyle();
-  const gate=document.getElementById('adultsGate');const tabsEl=document.getElementById('adultTabs');
+  const gate=document.getElementById('adultsGate');const grid=document.getElementById('girlsGrid');
+  const tabsEl=document.getElementById('adultTabs');if(tabsEl)tabsEl.innerHTML='';
   const ok=currentProfile.role==='admin'||currentProfile.kyc_status==='approved';
   if(!ok){
     if(gate)gate.innerHTML=`<div class="req-gate"><h3>🔞 Área exclusiva para adultos verificados</h3><p class="dim">Debes completar tu <b>verificación de identidad (KYC)</b> para entrar.</p><div class="row-buttons" style="justify-content:center"><button class="btn-primary" onclick="showSection('profile')">🪪 Verificarme ahora</button></div></div>`;
-    if(tabsEl)tabsEl.innerHTML='';
-    const g=document.getElementById('girlsGrid');if(g)g.innerHTML='';
-    const gc=document.getElementById('girlCatTabs');if(gc)gc.innerHTML='';
-    return;
-  }
+    if(grid)grid.innerHTML='';return;}
   if(gate)gate.innerHTML='';
-  const mods=window._adultModules||['girls'];
-  if(!mods.includes(_adultTab))_adultTab='girls';
-  if(tabsEl)tabsEl.innerHTML=mods.map(m=>`<button class="adult-tab ${_adultTab===m?'on':''}" onclick="setAdultTab('${m}')">${ADULT_NAMES[m]||m}</button>`).join('');
-  if(_adultTab==='girls'){await loadGirls();}
-  else{showSection(_adultTab);}
+  if(!grid)return;
+  grid.innerHTML='<p class="dim" style="text-align:center;padding:20px">Cargando modelos…</p>';
+  let html='';
+  for(const cat of CAT_ORDER){
+    try{const{data}=await db.rpc('get_top_models',{p_cat:cat.id,p_days:30,p_limit:4});const models=(typeof data==='string'?JSON.parse(data):data)||[];html+=renderCategorySection(cat.id,cat.name,models);}
+    catch(e){html+=`<div class="adult-section"><h3>${cat.name}</h3><p class="dim">No disponible</p></div>`;}
+  }
+  grid.innerHTML=html;
 }
+
+// ===== Mosaico completo de una categoría =====
+async function loadCategoryFull(catId,catName){
+  injectGirlStyle();
+  const gate=document.getElementById('adultsGate');if(gate)gate.innerHTML='';
+  const grid=document.getElementById('girlsGrid');if(!grid)return;
+  grid.innerHTML=`<div class="section-header" style="margin-bottom:10px"><h2>${catName}</h2><button class="btn-back" onclick="loadAdults()">← Volver</button></div><p class="dim" style="text-align:center">Cargando…</p>`;
+  try{
+    const{data}=await db.rpc('get_category_models',{p_cat:catId});
+    const models=(typeof data==='string'?JSON.parse(data):data)||[];
+    _girlsList=models;
+    grid.innerHTML=`<div class="section-header" style="margin-bottom:10px"><h2>${catName}</h2><button class="btn-back" onclick="loadAdults()">← Volver</button></div><div class="mosaic-grid">${models.map((w,i)=>girlCard(w,i)).join('')||'<p class="empty-state">Sin modelos</p>'}</div>`;
+  }catch(e){grid.innerHTML=`<div class="section-header"><h2>${catName}</h2><button class="btn-back" onclick="loadAdults()">← Volver</button></div><p class="empty-state">Error al cargar</p>`;}
+}
+
+// ===== Trabajo (modelo) =====
 async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker';const grid=document.getElementById('workersGrid');const panel=document.getElementById('workerPanel');
  if(isWorker){injectGirlStyle();grid.style.display='none';grid.innerHTML='';panel.classList.remove('hidden');const p=currentProfile;const lvNum=Math.min(5,Math.max(1,parseInt(roleDetails?.worker_level)||1));const net=roleDetails?.rate_per_minute!=null?roleDetails.rate_per_minute:levelInfo(lvNum).rate;const on=!!p.is_online;_we.interests=new Set(p.interests||[]);_we.preferences=new Set(p.preferences||[]);_we.zodiac=p.zodiac||null;pmInit('pmWorker',(p.worker_gallery||[]),5);
-  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis','♋ Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio','♐ Sagitario','♑ Capricornio','♒ Acuario','♓ Piscis'];
+  const INTERESTS=['Música','Cine','Viajes','Gym','Lectura','Arte','Moda','Gaming','Cocina','Baile','Fotografía','Naturaleza'];const PREFERENCES=['Viajar','Coquetear','Música','Citas','Conversar','Cine y series','Cenas','Baile','Juegos','Deportes'];const ZODIAC=['♈ Aries','♉ Tauro','♊ Géminis',' Cáncer','♌ Leo','♍ Virgo','♎ Libra','♏ Escorpio',' Sagitario','♑ Capricornio',' Acuario','♓ Piscis'];
   panel.innerHTML=`<h3>💼 Mi Trabajo</h3><div class="wk-card tier-${lvNum}">
-   <div class="wk-name">🎭 ${p.model_name||'Modelo'}</div>
+   <div class="wk-name"> ${p.model_name||'Modelo'}</div>
    <div class="wk-row">${levelBadge(lvNum)} <span class="wk-rate">TU ganancia: ◈ ${net}/min</span></div>
    <div class="wk-kyc">${p.kyc_status==='approved'?'✅ Verificación KYC aprobada':'⏳ Verificación KYC pendiente'}</div>
-   <div class="wk-switch-row"><span id="wkState" class="wk-state ${on?'on':'off'}">${on?'🟢 EN LÍNEA':'🔴 DESCONECTADA'}</span><label class="wk-switch"><input type="checkbox" id="wkToggle" ${on?'checked':''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label></div>
+   <div class="wk-switch-row"><span id="wkState" class="wk-state ${on?'on':'off'}">${on?' EN LÍNEA':'🔴 DESCONECTADA'}</span><label class="wk-switch"><input type="checkbox" id="wkToggle" ${on?'checked':''} onchange="setWorkerOnline(this.checked)"><span class="wk-slider"></span></label></div>
    <p class="dim" style="margin-top:12px">Solo recibes llamadas con la app/página <b>abierta</b> y el switch en verde.</p>
    <div class="row-buttons" style="margin-top:10px"><button class="btn-secondary half" onclick="previewWorkerProfile()">👁 Previsualizar perfil</button></div>
    <div class="wk-pro"><h4 class="sub-title">🎭 Mi Perfil de Modelo</h4><form class="owner-form" onsubmit="saveWorkerPro(event)">
@@ -122,11 +179,10 @@ async function loadWorkers(){const isWorker=currentProfile.role==='remote_worker
     <label class="dim">💫 Preferencias</label><div class="chips-row">${PREFERENCES.map(i=>`<span class="chip ${_we.preferences.has(i)?'active':''}" onclick="toggleWChip(this,'preferences','${i}')">${i}</span>`).join('')}</div>
     <label class="dim">✨ Zodiaco</label><div class="chips-row">${ZODIAC.map(z=>`<span class="chip wz-chip ${_we.zodiac===z?'active':''}" onclick="pickWZodiac(this,'${z}')">${z}</span>`).join('')}</div>
     <button type="submit" class="btn-primary">💾 Guardar Perfil de Modelo</button></form></div></div>`;
-  pmRender('pmWorker');
-  return;}
- injectGirlStyle();grid.style.display='';panel.classList.add('hidden');_girlsList=await fetchPublicWorkers();renderGirlsGrid();}
+  pmRender('pmWorker');return;}
+ injectGirlStyle();grid.style.display='';panel.classList.add('hidden');await loadAdults();}
 async function saveWorkerPro(e){e.preventDefault();const p=currentProfile;const up={model_name:document.getElementById('wpModel').value.trim(),bio:document.getElementById('wpBio').value,interests:Array.from(_we.interests),preferences:Array.from(_we.preferences),zodiac:_we.zodiac};const g=pmState('pmWorker');let gallery=[...g.kept];for(const f of g.newFiles){if(gallery.length>=5)break;const path='wgallery/'+currentUser.id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9.]/g,'_');const r=await db.storage.from('fendyx-assets').upload(path,f);if(!r.error)gallery.push(db.storage.from('fendyx-assets').getPublicUrl(path).data.publicUrl);}up.worker_gallery=gallery.slice(0,5);await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();loadWorkers();showToast('✅ Perfil de Modelo guardado');}
-async function setWorkerOnline(on){localStorage.setItem('fendyx_online_intent',on?'1':'0');await setWorkerOnlineDB(on);const st=document.getElementById('wkState');if(st){st.className='wk-state '+(on?'on':'off');st.textContent=on?'🟢 EN LÍNEA':'🔴 DESCONECTADA';}showToast(on?'🟢 En línea: te pueden llamar':'🔴 Desconectada');}
+async function setWorkerOnline(on){localStorage.setItem('fendyx_online_intent',on?'1':'0');await setWorkerOnlineDB(on);const st=document.getElementById('wkState');if(st){st.className='wk-state '+(on?'on':'off');st.textContent=on?' EN LÍNEA':'🔴 DESCONECTADA';}showToast(on?'🟢 En línea: te pueden llamar':'🔴 Desconectada');}
 function fillKycForm(){const p=currentProfile;const box=document.getElementById('kycStatusBox');const st={none:'⚪ No aplica',pending:'⏳ Pendiente',approved:'✅ Verificada',rejected:'❌ Rechazada: '+(p.kyc_note||'')}[p.kyc_status]||'⚪';box.innerHTML=`<h3>Verificación</h3><p>${st}</p><p class="dim">Real: <b>${p.full_name||'—'}</b> · Artístico: <b>${p.model_name||'—'}</b></p>${p.id_card_url?`<img class="kyc-img" src="${p.id_card_url}">`:''}${p.face_photo_url?`<img class="kyc-img" src="${p.face_photo_url}">`:''}`;document.getElementById('kycWhatsapp').value=p.whatsapp||'';}
 async function submitKycDocs(e){e.preventDefault();const up={whatsapp:document.getElementById('kycWhatsapp').value,kyc_status:'pending'};const idf=document.getElementById('kycIdCard').files[0];const fcf=document.getElementById('kycFace').files[0];if(idf){const p1='kyc/'+currentUser.id+'_id_'+Date.now()+'.jpg';const r=await db.storage.from('fendyx-assets').upload(p1,idf);if(!r.error)up.id_card_url=db.storage.from('fendyx-assets').getPublicUrl(p1).data.publicUrl;}if(fcf){const p2='kyc/'+currentUser.id+'_face_'+Date.now()+'.jpg';const r=await db.storage.from('fendyx-assets').upload(p2,fcf);if(!r.error)up.face_photo_url=db.storage.from('fendyx-assets').getPublicUrl(p2).data.publicUrl;}await db.from('profiles').update(up).eq('id',currentUser.id);await loadProfile();fillKycForm();showToast('📨 Enviado');}
 async function startCall(workerId,netRate){netRate=parseFloat(netRate)||1;const clientRate=netRate*2;const{data:wk}=await db.from('profiles').select('is_online, kyc_status').eq('id',workerId).single();if(!wk||wk.kyc_status!=='approved'){showToast('❌ No verificada');return;}if(!wk.is_online){showToast('❌ No está en línea ahora');return;}if(currentProfile.role!=='admin'&&currentProfile.kyc_status!=='approved'){showToast('🪪 Verifica tu identidad en Mi Perfil para llamar');showSection('profile');return;}if(!requireBalance(clientRate))return;const roomId='FENDYX'+Date.now();const{data:call}=await db.from('video_calls').insert({worker_id:workerId,client_id:currentUser.id,room_id:roomId,rate_per_minute:netRate,status:'active',started_at:new Date().toISOString()}).select().single();await loadScript('calls.js');await startWebCall(roomId,{rate:netRate,rowId:call.id,asClient:true});}
